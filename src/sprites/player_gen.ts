@@ -217,48 +217,58 @@ function slideSprite(f: Facing, frame: number, col: PlayerColors): Px[] {
   }
 
   // Centered in the cell (render anchors the slide on the cell center).
-  // Canonical Sensi slide (sliding toward facing): one leg STRAIGHT and
-  // extended low along the ground (the tackling leg), the other leg BENT with
-  // the knee up, and the trailing arm raised UP. +p is the "up" side; +t is
-  // toward facing.
+  // Canonical Sensi slide, read off the reference (sliding toward facing):
+  // body leaning BACK with the head trailing and raised, one arm flung
+  // forward-UP over the body (sleeve to hand), the tackling leg STRAIGHT out
+  // level with the torso ending in a chunky boot, the other knee tucked under,
+  // and a support arm pressed to the ground. +p = screen-up, +t = facing.
   const cx = 3.0;
   const cy = 6.0;
-  const s = frame === 0 ? 0.85 : 1.0; // limbs extend further on frame 1
   const put = (t: number, p: number, c: RGB) =>
     add(cx + fx * t + pxn * p, cy + fy * t + pyn * p, c);
-  const limb = (t: number, p: number, c: RGB) => put(t * s, p * s, c);
 
-  // Head (trailing end), low and compact.
-  put(-2.9, 0.0, col.hair);
-  put(-2.9, 0.7, col.hair);
-  put(-2.4, 0.0, col.hair);
-  put(-2.4, 0.7, col.hair);
-  put(-2.3, -0.6, col.hair);
-  // Face + bright eye.
-  put(-2.1, -0.5, col.skin);
-  put(-2.0, 0.3, WHITE);
-  // Torso (shirt), compact 2px-wide block.
-  for (const t of [-1.6, -1.0, -0.4, 0.2]) {
-    put(t, -0.1, col.shirt);
-    put(t, 0.7, col.shirt);
+  // Integer (t, p) offsets so pixels land exactly (no rounding collisions).
+  // Head: hair mass trailing and raised (leaning back), swept forward over the
+  // face; eye sits inside the face with a skin chin below.
+  put(-3, 3, col.hair);
+  put(-2, 3, col.hair);
+  put(-1, 3, col.hair); // swept over the brow
+  put(-3, 4, col.hair);
+  put(-2, 4, col.hair);
+  put(-4, 4, col.hair); // crown tuft
+  put(-2, 2, col.skin); // face
+  put(-1, 2, WHITE); // eye highlight
+  put(-1, 1, col.skin); // chin
+  // Raised arm: sleeve arcing forward-up over the body to a 2px skin hand.
+  put(0, 2, col.shirt);
+  put(1, 3, col.shirt);
+  put(2, 4, col.skin);
+  put(3, 4, col.skin);
+  // Torso: chunky red mass.
+  put(-1, 0, col.shirt);
+  put(0, 0, col.shirt);
+  put(1, 0, col.shirt);
+  put(0, 1, col.shirt);
+  put(1, 1, col.shirt);
+  // Support arm pressed to the ground under the torso.
+  put(-1, -1, col.skin);
+  put(0, -1, col.skin);
+  // Hips.
+  put(2, 0, col.shorts);
+  put(2, 1, col.shorts);
+  // Tucked (bent) knee under the hips.
+  put(2, -1, col.skin);
+  // Straight tackling leg: level with the torso, chunky 2px boot at the end.
+  if (frame === 0) {
+    put(3, 1, col.skin);
+    put(4, 1, BLACK);
+    put(4, 0, BLACK);
+  } else {
+    put(3, 1, col.skin);
+    put(4, 1, col.skin);
+    put(5, 1, BLACK);
+    put(5, 0, BLACK);
   }
-  // Hip / shorts.
-  put(0.6, 0.0, col.shorts);
-  put(0.6, 0.7, col.shorts);
-  // Straight tackling leg: extended low along the ground (down side), boot at
-  // the far end.
-  limb(1.3, -0.3, col.shorts);
-  limb(2.3, -0.4, col.socks);
-  limb(3.2, -0.5, col.socks);
-  limb(4.1, -0.6, BLACK);
-  // Bent leg: knee/shin up, short, boot kicked up.
-  limb(1.2, 0.9, col.shorts);
-  limb(1.7, 1.7, col.socks);
-  limb(1.9, 2.5, BLACK);
-  // Raised arm: trailing shoulder up to a skin hand.
-  limb(-0.6, 1.0, col.shirt);
-  limb(-0.4, 1.9, col.shirt);
-  limb(-0.2, 2.7, col.skin);
   return px;
 }
 
