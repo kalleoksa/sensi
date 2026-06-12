@@ -6,6 +6,7 @@ import {
   type Player,
   type GameState,
   type Dir8,
+  type Role,
   DIR_VEC,
   dirFromVec,
 } from './state';
@@ -39,6 +40,7 @@ export interface PlayerInit {
   y: number;
   team: 0 | 1;
   isHuman: boolean;
+  role: Role;
   shirt: RGB;
   shorts: RGB;
   socks: RGB;
@@ -61,6 +63,9 @@ export function makePlayer(init: PlayerInit): Player {
     distance: 0,
     team: init.team,
     isHuman: init.isHuman,
+    role: init.role,
+    homeX: init.x,
+    homeY: init.y,
     charging: false,
     charge: 0,
     bufferedTap: 0,
@@ -229,4 +234,72 @@ export function controlHuman(state: GameState, p: Player, input: InputFrame, dt:
     const len = Math.hypot(input.dx, input.dy);
     applyAftertouch(state.ball, input.dx / len, input.dy / len, dt);
   }
+}
+
+// Steer an AI player toward a target point; handles facing, run/idle anim, the
+// state-lock timer, and integration. Mirrors controlHuman's movement half.
+export function moveToward(
+  p: Player,
+  tx: number,
+  ty: number,
+  dt: number,
+  speed = PLAYER_SPEED,
+  arrive = 2,
+): void {
+  if (p.stateTimer > 0) p.stateTimer = Math.max(0, p.stateTimer - dt);
+  const locked = isLocked(p);
+  if (!locked) {
+    const dx = tx - p.x;
+    const dy = ty - p.y;
+    const d = Math.hypot(dx, dy);
+    if (d > arrive) {
+      p.vx = (dx / d) * speed;
+      p.vy = (dy / d) * speed;
+      p.dir = dirFromVec(dx, dy);
+      if (p.state !== 'kick') p.state = 'run';
+    } else {
+      p.vx = 0;
+      p.vy = 0;
+      if (p.state !== 'kick') p.state = 'idle';
+    }
+  } else if (p.state === 'slide') {
+    p.vx *= Math.exp(-3 * dt);
+    p.vy *= Math.exp(-3 * dt);
+  } else {
+    p.vx = 0;
+    p.vy = 0;
+  }
+  if (p.stateTimer <= 0 && (p.state === 'kick' || p.state === 'slide' || p.state === 'fallen')) {
+    p.state = 'idle';
+  }
+  integrate(p, dt);
+}
+
+// Generic kick toward a target point (AI passes, shots, clearances).
+export function kickToward(
+  state: GameState,
+  p: Player,
+  tx: number,
+  ty: number,
+  speed: number,
+  loft = 0,
+): void {
+  const dx = tx - p.x;
+  const dy = ty - p.y;
+  const d = Math.hypot(dx, dy) || 1;
+  const fx = dx / d;
+  const fy = dy / d;
+  const b = state.ball;
+  b.x = p.x + fx * 6;
+  b.y = p.y + fy * 6;
+  b.vx = fx * speed;
+  b.vy = fy * speed;
+  b.vz = loft;
+  b.spin = 0;
+  b.aftertouch = 0;
+  b.controlLock = 0.22;
+  b.owner = p;
+  p.dir = dirFromVec(fx, fy);
+  p.state = 'kick';
+  p.stateTimer = KICK_LOCK;
 }

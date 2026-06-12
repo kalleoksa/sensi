@@ -31,7 +31,7 @@ export function makeMatch(): Match {
   return { score: [0, 0], phase: 'play', deadTimer: 0, flash: 0 };
 }
 
-// Kickoff: ball at center, the human just behind it (team 0 attacks up).
+// Kickoff: ball at center, every player back on its formation home.
 export function resetKickoff(state: GameState): void {
   const b = state.ball;
   const midY = (FIELD_T + FIELD_B) / 2;
@@ -46,9 +46,8 @@ export function resetKickoff(state: GameState): void {
   b.controlLock = 0;
   b.owner = null;
   for (const p of state.players) {
-    const home = p.team === 0 ? midY + 22 : midY - 22;
-    p.x = CX;
-    p.y = home;
+    p.x = p.homeX;
+    p.y = p.homeY;
     p.prevX = p.x;
     p.prevY = p.y;
     p.vx = p.vy = p.z = p.vz = 0;

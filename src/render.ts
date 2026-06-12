@@ -166,6 +166,17 @@ export function makeRenderer(
     items.sort((a, c) => a.y - c.y);
     for (const it of items) it.draw();
 
+    // Controlled-player indicator: a small downward chevron above the head.
+    if (state.controlled) {
+      const p = state.controlled;
+      const ix = Math.round(lerp(p.prevX, p.x, alpha) - cam.x);
+      const iy = Math.round(lerp(p.prevY, p.y, alpha) - cam.y) - 17;
+      ctx.fillStyle = 'rgb(250,250,240)';
+      ctx.fillRect(ix - 2, iy, 5, 1);
+      ctx.fillRect(ix - 1, iy + 1, 3, 1);
+      ctx.fillRect(ix, iy + 2, 1, 1);
+    }
+
     // 4. Goal frames on top (net occludes the ball when it's inside).
     ctx.drawImage(baked.goalTop.canvas, Math.round(baked.goalTop.ox - cam.x), Math.round(baked.goalTop.oy - cam.y));
     ctx.drawImage(

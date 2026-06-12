@@ -38,6 +38,7 @@ export function dirFromVec(dx: number, dy: number): Dir8 {
 }
 
 export type PlayerState = 'idle' | 'run' | 'kick' | 'header' | 'slide' | 'fallen';
+export type Role = 'gk' | 'def' | 'mid' | 'fwd';
 
 export interface Player {
   x: number;
@@ -54,6 +55,9 @@ export interface Player {
   distance: number; // accumulated travel, drives the run cycle
   team: 0 | 1;
   isHuman: boolean;
+  role: Role;
+  homeX: number; // formation anchor in world coords
+  homeY: number;
   // Transient control state (human).
   charging: boolean; // shot power building while action held
   charge: number; // seconds the action has been held
@@ -87,4 +91,6 @@ export interface GameState {
   camera: Camera;
   // Carrier resolved each step by proximity (dribble model).
   carrier: Player | null;
+  // The team-0 player the human currently drives (auto-switches to nearest).
+  controlled: Player | null;
 }
