@@ -98,8 +98,8 @@ function positionHome(state: GameState, p: Player, dt: number): void {
   // Shift the formation anchor toward the ball. Forwards follow play up the
   // pitch hard (join attacks); defenders hold more shape. This keeps the team
   // compact around the ball instead of sitting deep.
-  const wy = p.role === 'fwd' ? 0.72 : p.role === 'mid' ? 0.58 : 0.4;
-  const shiftX = (b.x - CX) * 0.5;
+  const wy = p.role === 'fwd' ? 0.95 : p.role === 'mid' ? 0.8 : 0.6;
+  const shiftX = (b.x - CX) * 0.6;
   const shiftY = (b.y - MID_Y) * wy;
   const tx = clamp(p.homeX + shiftX, FIELD_L + 4, FIELD_R - 4);
   const ty = clamp(p.homeY + shiftY, FIELD_T + 6, FIELD_B - 6);
@@ -108,10 +108,13 @@ function positionHome(state: GameState, p: Player, dt: number): void {
 
 export function updateTeamAi(state: GameState, dt: number): void {
   const b = state.ball;
-  // Closest player to the ball on each team (the designated chaser/presser).
+  // Closest AI outfielder to the ball on each team (the designated chaser).
+  // Exclude keepers and the human-controlled player — if one of those counted
+  // as "nearest", the team's actual chaser slot went unfilled and nobody moved.
   const nearest: (Player | null)[] = [null, null];
   const nd = [Infinity, Infinity];
   for (const p of state.players) {
+    if (p.role === 'gk' || p === state.controlled) continue;
     const d = Math.hypot(p.x - b.x, p.y - b.y);
     if (d < nd[p.team]) {
       nd[p.team] = d;
