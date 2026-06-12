@@ -3,6 +3,7 @@
 
 import { type GameState, type Player } from './state';
 import type { Camera } from './world';
+import type { Match } from './match';
 import { VIEW_W, VIEW_H } from './world';
 import type { BakedPitch } from './sprites/pitch_gen';
 import { buildAtlas, spriteFor, runFrame, CELL_W, CELL_H } from './sprites/player_gen';
@@ -14,6 +15,37 @@ const FEET_Y = 13;
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
+}
+
+// 3x5 pixel digit font (rows top->bottom), for the score HUD.
+const DIGITS: Record<string, string[]> = {
+  '0': ['111', '101', '101', '101', '111'],
+  '1': ['010', '110', '010', '010', '111'],
+  '2': ['111', '001', '111', '100', '111'],
+  '3': ['111', '001', '111', '001', '111'],
+  '4': ['101', '101', '111', '001', '001'],
+  '5': ['111', '100', '111', '001', '111'],
+  '6': ['111', '100', '111', '101', '111'],
+  '7': ['111', '001', '010', '010', '010'],
+  '8': ['111', '101', '111', '101', '111'],
+  '9': ['111', '101', '111', '001', '111'],
+  '-': ['000', '000', '111', '000', '000'],
+};
+
+function drawText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string): void {
+  ctx.fillStyle = color;
+  let cx = x;
+  for (const ch of text) {
+    const glyph = DIGITS[ch];
+    if (glyph) {
+      for (let r = 0; r < glyph.length; r++) {
+        for (let c = 0; c < 3; c++) {
+          if (glyph[r][c] === '1') ctx.fillRect(cx + c, y + r, 1, 1);
+        }
+      }
+    }
+    cx += 4; // 3px glyph + 1px gap
+  }
 }
 
 function drawPlayer(
@@ -76,8 +108,8 @@ function drawPlayerShadow(ctx: CanvasRenderingContext2D, p: Player, cam: Camera,
 export function makeRenderer(
   ctx: CanvasRenderingContext2D,
   baked: BakedPitch,
-): (state: GameState, alpha: number) => void {
-  return (state, alpha) => {
+): (state: GameState, alpha: number, match: Match) => void {
+  return (state, alpha, match) => {
     const cam = state.camera;
 
     ctx.imageSmoothingEnabled = false;
@@ -154,5 +186,14 @@ export function makeRenderer(
       ctx.fillRect(hx + 1, hy + 1, Math.round(12 * frac), 1);
     }
 
+    // 6. Score HUD, top-center: "T0 - T1". Flashes brighter just after a goal.
+    const scoreText = `${match.score[0]}-${match.score[1]}`;
+    const tw = scoreText.length * 4 - 1;
+    const tx = Math.round((VIEW_W - tw) / 2);
+    const ty = 4;
+    // Backing for legibility over grass.
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(tx - 2, ty - 2, tw + 4, 9);
+    drawText(ctx, scoreText, tx, ty, match.flash > 0 ? 'rgb(250,230,90)' : 'rgb(236,240,226)');
   };
 }

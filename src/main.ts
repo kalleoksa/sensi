@@ -9,6 +9,7 @@ import { makeRenderer } from './render';
 import { makeBall, stepBall } from './ball';
 import { makePlayer, controlHuman, resolvePossession } from './player';
 import { buildAtlas, spriteFor } from './sprites/player_gen';
+import { makeMatch, updateMatch, resetKickoff } from './match';
 import { KIT_RED, WHITE, HAIR_DARK } from './sprites/palette';
 import type { GameState } from './state';
 import { Dir } from './state';
@@ -53,33 +54,16 @@ const state: GameState = {
   camera: makeCamera(),
   carrier: null,
 };
+const match = makeMatch();
 // Center the camera on the ball at kickoff.
 updateCamera(state.camera, state.ball.x, state.ball.y, 0, 0, 1);
 
-// Dev: reset ball + player to kickoff with R; expose state for inspection.
-function resetKickoff(): void {
-  const b = state.ball;
-  b.x = CX;
-  b.y = midY;
-  b.z = 0;
-  b.prevX = b.x;
-  b.prevY = b.y;
-  b.prevZ = 0;
-  b.vx = b.vy = b.vz = b.spin = 0;
-  b.aftertouch = b.controlLock = 0;
-  b.owner = null;
-  human.x = CX;
-  human.y = midY + 22;
-  human.prevX = human.x;
-  human.prevY = human.y;
-  human.vx = human.vy = 0;
-  human.state = 'idle';
-  human.charging = false;
-}
+// Dev: reset to kickoff with R (keeps score); expose state for inspection.
 window.addEventListener('keydown', (e) => {
-  if (e.code === 'KeyR') resetKickoff();
+  if (e.code === 'KeyR') resetKickoff(state);
 });
 (window as unknown as { __game: GameState }).__game = state;
+(window as unknown as { __match: unknown }).__match = match;
 // Dev: expose sprite generation so the atlas can be inspected at any zoom.
 (window as unknown as { __sprites: unknown }).__sprites = {
   buildAtlas,
@@ -89,12 +73,16 @@ window.addEventListener('keydown', (e) => {
 
 function step(dt: number): void {
   const input = consumeInput();
-  for (const p of state.players) {
-    if (p.isHuman) controlHuman(state, p, input, dt);
+  // Freeze player control during the post-goal pause.
+  if (match.phase === 'play') {
+    for (const p of state.players) {
+      if (p.isHuman) controlHuman(state, p, input, dt);
+    }
+    stepBall(state.ball, dt);
+    resolvePossession(state, dt);
   }
-  stepBall(state.ball, dt);
-  resolvePossession(state, dt);
+  updateMatch(state, match, dt);
   updateCamera(state.camera, state.ball.x, state.ball.y, state.ball.vx, state.ball.vy, dt);
 }
 
-startLoop(step, (alpha) => render(state, alpha));
+startLoop(step, (alpha) => render(state, alpha, match));
