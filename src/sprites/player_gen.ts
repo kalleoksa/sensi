@@ -217,47 +217,44 @@ function slideSprite(f: Facing, frame: number, col: PlayerColors): Px[] {
   }
 
   // Centered in the cell (render anchors the slide on the cell center). The
-  // figure runs the full length of the cell so it reads as a full-size player.
+  // pose: head trailing low, a compact body, and two legs kicked high up-and-
+  // forward into a spread V (one tipped with a boot, one with a bare foot) --
+  // the dominant feature of the reference slide. +p is the "up" side.
   const cx = 3.0;
-  const cy = 5.0;
-  const reach = frame === 0 ? 4.4 : 5.2; // boots far out along facing
-  // Place a pixel at axis distance t (toward facing) and perpendicular p.
+  const cy = 5.5;
+  const s = frame === 0 ? 0.85 : 1.0; // legs kick further out on frame 1
   const put = (t: number, p: number, c: RGB) =>
     add(cx + fx * t + pxn * p, cy + fy * t + pyn * p, c);
+  const legPt = (t: number, p: number, c: RGB) => put(t * s, p * s, c);
 
-  // Head (trailing end): a chunky hair mass with the crown to the back.
-  put(-4.0, 0, col.hair);
-  put(-4.0, -1, col.hair);
-  put(-3.3, -1, col.hair);
-  put(-3.3, 0, col.hair);
-  put(-3.3, 1, col.hair);
-  put(-2.7, 1, col.hair);
-  // Face: skin with a bright eye highlight.
-  put(-2.7, -1, col.skin);
-  put(-2.5, 0, WHITE);
-  put(-2.4, 1, col.skin);
-  // Torso (shirt), long and 3px wide for body mass.
-  for (const t of [-1.9, -1.2, -0.5, 0.2, 0.9]) {
-    put(t, -1, col.shirt);
-    put(t, 0, col.shirt);
-    put(t, 1, col.shirt);
+  // Head (trailing end), low and compact.
+  put(-3.4, 0.1, col.hair);
+  put(-3.4, 0.8, col.hair);
+  put(-2.8, 0.1, col.hair);
+  put(-2.8, 0.8, col.hair);
+  put(-2.7, -0.5, col.hair);
+  // Face + bright eye.
+  put(-2.5, -0.4, col.skin);
+  put(-2.4, 0.4, WHITE);
+  // Torso (shirt), compact 2px-wide block.
+  for (const t of [-1.9, -1.3, -0.7, -0.1]) {
+    put(t, -0.2, col.shirt);
+    put(t, 0.6, col.shirt);
   }
-  // Shorts band (two columns).
-  for (const t of [1.6, 2.2]) {
-    put(t, -0.3, col.shorts);
-    put(t, 0.6, col.shorts);
-    put(t, 1.3, col.shorts);
-  }
-  // Lower leg -> boot. (+p is the "up" side; the player slides on its back so
-  // the legs/feet ride up toward facing.)
-  put(2.9, 0.4, col.socks);
-  put(3.7, 0.7, col.socks);
-  put(reach, 0.9, BLACK);
-  // Upper leg -> boot (feet kicked up, slightly higher and shorter).
-  put(3.1, 1.6, col.socks);
-  put(reach - 0.6, 1.9, BLACK);
-  // Trailing hand reaching back near the head.
-  put(-1.7, -1.7, col.skin);
+  // Hip / shorts.
+  put(0.4, -0.2, col.shorts);
+  put(0.4, 0.6, col.shorts);
+  put(0.9, 0.2, col.shorts);
+  // Leg A: steep, kicked high, ending in a bare foot (the skin tip on ref).
+  legPt(1.1, 1.0, col.shorts);
+  legPt(1.7, 1.8, col.socks);
+  legPt(2.3, 2.6, col.socks);
+  legPt(2.8, 3.3, col.skin);
+  // Leg B: shallower, spread apart, ending in a boot.
+  legPt(1.3, 0.2, col.shorts);
+  legPt(2.0, 0.7, col.socks);
+  legPt(2.8, 1.1, col.socks);
+  legPt(3.5, 1.5, BLACK);
   return px;
 }
 
