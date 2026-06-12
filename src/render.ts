@@ -1,7 +1,7 @@
 // Draw order: pitch (+ baked goal shadows) -> dynamic shadows -> entities
 // (y-sorted, lifted by z) -> goal frames (net occludes the ball) -> HUD.
 
-import { type GameState, type Player, DIR_VEC } from './state';
+import { type GameState, type Player } from './state';
 import type { Camera } from './world';
 import { VIEW_W, VIEW_H } from './world';
 import type { BakedPitch } from './sprites/pitch_gen';
@@ -14,24 +14,6 @@ const FEET_Y = 13;
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
-}
-
-// 50% checkerboard shadow blob in world->screen space.
-function checkerShadow(
-  ctx: CanvasRenderingContext2D,
-  sx: number,
-  sy: number,
-  w: number,
-  h: number,
-): void {
-  ctx.fillStyle = css(SHADOW);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (((sx + x) + (sy + y)) % 2 === 0) {
-        ctx.fillRect(sx + x, sy + y, 1, 1);
-      }
-    }
-  }
 }
 
 function drawPlayer(
@@ -70,18 +52,20 @@ function drawPlayer(
 function drawPlayerShadow(ctx: CanvasRenderingContext2D, p: Player, cam: Camera, alpha: number): void {
   const wx = lerp(p.prevX, p.x, alpha);
   const wy = lerp(p.prevY, p.y, alpha);
+  ctx.fillStyle = css(SHADOW);
   if (p.z < 1) {
-    // Grounded: body flattened down-right (sun upper-left) into a diagonal
-    // blob, like the reference. Two offset rows give the angled read.
+    // Grounded: a compact solid blob cast down-right (sun upper-left). Solid,
+    // not dithered — a 50% checker this small just reads as scattered dots.
     const sx = Math.round(wx - cam.x);
     const sy = Math.round(wy - cam.y);
-    checkerShadow(ctx, sx - 1, sy - 2, 5, 2); // near the feet
-    checkerShadow(ctx, sx + 1, sy, 5, 2); // shifted down-right (the "tail")
+    ctx.fillRect(sx - 2, sy - 1, 4, 1);
+    ctx.fillRect(sx, sy, 4, 1);
+    ctx.fillRect(sx + 2, sy + 1, 3, 1);
   } else {
     // Airborne: project by height down-right.
     const sx = Math.round(wx - cam.x + 1.4 * p.z);
     const sy = Math.round(wy - cam.y + 0.5 * p.z);
-    checkerShadow(ctx, sx - 2, sy, 5, 2);
+    ctx.fillRect(sx - 2, sy, 5, 2);
   }
 }
 
@@ -108,7 +92,9 @@ export function makeRenderer(
       // Ball shadow sits down-right (sun upper-left); rises away when airborne.
       const ssx = Math.round(bx - cam.x + 1 + 1.4 * bz);
       const ssy = Math.round(by - cam.y + 2 + 0.5 * bz);
-      checkerShadow(ctx, ssx - 1, ssy, 4, 2);
+      ctx.fillStyle = css(SHADOW);
+      ctx.fillRect(ssx - 1, ssy, 3, 1);
+      ctx.fillRect(ssx, ssy + 1, 2, 1);
     }
 
     // 3. Entities, y-sorted (feet/ground y), lifted by z.
@@ -164,14 +150,5 @@ export function makeRenderer(
       ctx.fillRect(hx + 1, hy + 1, Math.round(12 * frac), 1);
     }
 
-    // Facing tick for the carrier (subtle aim aid while tuning).
-    if (state.carrier) {
-      const p = state.carrier;
-      const [fx, fy] = DIR_VEC[p.dir];
-      const px = Math.round(lerp(p.prevX, p.x, alpha) - cam.x + fx * 9);
-      const py = Math.round(lerp(p.prevY, p.y, alpha) - cam.y + fy * 9 - 7);
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.fillRect(px, py, 1, 1);
-    }
   };
 }
