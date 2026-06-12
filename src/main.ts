@@ -73,14 +73,15 @@ window.addEventListener('keydown', (e) => {
 
 function step(dt: number): void {
   const input = consumeInput();
-  // Freeze player control during the post-goal pause.
+  // Freeze player control during the post-goal pause, but keep the ball rolling
+  // so it travels into the net during the goal celebration.
   if (match.phase === 'play') {
     for (const p of state.players) {
       if (p.isHuman) controlHuman(state, p, input, dt);
     }
-    stepBall(state.ball, dt);
     resolvePossession(state, dt);
   }
+  stepBall(state.ball, dt);
   updateMatch(state, match, dt);
   updateCamera(state.camera, state.ball.x, state.ball.y, state.ball.vx, state.ball.vy, dt);
 }

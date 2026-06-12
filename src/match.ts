@@ -17,7 +17,7 @@ import {
 } from './world';
 
 const GOAL_HEIGHT = 16; // ball above this z sails over the bar
-const DEAD_TIME = 1.1; // brief pause after a goal
+const DEAD_TIME = 1.7; // celebration: ball rolls into the net, then kickoff
 const RESTART_LOCK = 0.4; // ball can't be re-controlled instantly off a restart
 
 export interface Match {
@@ -78,12 +78,13 @@ function placeRestart(state: GameState, x: number, y: number): void {
   state.carrier = null;
 }
 
-function scoreGoal(state: GameState, match: Match, scoringTeam: 0 | 1): void {
+function scoreGoal(_state: GameState, match: Match, scoringTeam: 0 | 1): void {
   match.score[scoringTeam]++;
   match.phase = 'dead';
   match.deadTimer = DEAD_TIME;
   match.flash = DEAD_TIME;
-  resetKickoff(state);
+  // Don't reset yet — let the ball roll on into the net during the celebration.
+  // resetKickoff happens when the dead timer elapses (see updateMatch).
 }
 
 export function updateMatch(state: GameState, match: Match, dt: number): void {
@@ -91,7 +92,10 @@ export function updateMatch(state: GameState, match: Match, dt: number): void {
 
   if (match.phase === 'dead') {
     match.deadTimer -= dt;
-    if (match.deadTimer <= 0) match.phase = 'play';
+    if (match.deadTimer <= 0) {
+      resetKickoff(state); // ball was in the net; now restart from center
+      match.phase = 'play';
+    }
     return;
   }
 
