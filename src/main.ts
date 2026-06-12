@@ -8,6 +8,7 @@ import { bakePitch } from './sprites/pitch_gen';
 import { makeRenderer } from './render';
 import { makeBall, stepBall } from './ball';
 import { makePlayer, controlHuman, resolvePossession } from './player';
+import { buildAtlas, spriteFor } from './sprites/player_gen';
 import { KIT_RED, WHITE, HAIR_DARK } from './sprites/palette';
 import type { GameState } from './state';
 import { Dir } from './state';
@@ -79,6 +80,12 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyR') resetKickoff();
 });
 (window as unknown as { __game: GameState }).__game = state;
+// Dev: expose sprite generation so the atlas can be inspected at any zoom.
+(window as unknown as { __sprites: unknown }).__sprites = {
+  buildAtlas,
+  spriteFor,
+  colors: { shirt: KIT_RED, shorts: WHITE, socks: KIT_RED, hair: HAIR_DARK },
+};
 
 function step(dt: number): void {
   const input = consumeInput();

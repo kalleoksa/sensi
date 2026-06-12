@@ -63,44 +63,32 @@ function head(f: Facing, hair: RGB, skin: RGB): Px[] {
   const S = skin;
   const px: Px[] = [];
   const add = (x: number, y: number, c: RGB) => px.push({ x, y, c });
-  // Rounded crown (narrow top row) sitting tight on the shoulders — no flat
-  // top-hat brim. Rows: 0 crown, 1-2 hair, 3 face sliver.
+  // Rounded crown + hair cap (rows 0-1), then two rows of face (rows 2-3)
+  // framed by sideburns — so the player has an actual visible face, not a
+  // solid black blob. Front facings show the most skin; U/UR show back of head.
   add(2, 0, H);
   add(3, 0, H);
-  for (let x = 1; x <= 4; x++) {
-    add(x, 1, H);
-    add(x, 2, H);
-  }
+  for (let x = 1; x <= 4; x++) add(x, 1, H);
 
   switch (f) {
     case 'D':
-      add(1, 2, H); // keep sideburns, face below
-      add(4, 2, H);
-      add(2, 3, S);
-      add(3, 3, FACE_HI); // small face sliver with a bright highlight
-      add(1, 3, H);
-      add(4, 3, H);
+      add(1, 2, H); add(2, 2, S); add(3, 2, S); add(4, 2, H); // forehead
+      add(1, 3, H); add(2, 3, S); add(3, 3, FACE_HI); add(4, 3, H); // face + highlight
       break;
     case 'DR':
-      add(2, 3, S);
-      add(3, 3, FACE_HI);
-      add(4, 3, S); // face turned slightly to facing side
-      add(1, 3, H);
+      add(1, 2, H); add(2, 2, S); add(3, 2, S); add(4, 2, S); // face toward facing
+      add(1, 3, H); add(2, 3, S); add(3, 3, FACE_HI); add(4, 3, S);
       break;
     case 'R':
-      add(3, 2, S); // cheek
-      add(4, 2, S);
-      add(3, 3, S);
-      add(4, 3, S); // narrow profile face
-      add(1, 3, H);
-      add(2, 3, H);
+      add(1, 2, H); add(2, 2, H); add(3, 2, S); add(4, 2, S); // profile, face front
+      add(1, 3, H); add(2, 3, S); add(3, 3, FACE_HI); add(4, 3, S);
       break;
     case 'UR':
-      add(4, 2, S); // sliver of cheek toward facing
-      for (let x = 1; x <= 4; x++) add(x, 3, H); // mostly back of head
+      add(1, 2, H); add(2, 2, H); add(3, 2, H); add(4, 2, S); // cheek sliver only
+      for (let x = 1; x <= 4; x++) add(x, 3, H); // back of head
       break;
     case 'U':
-      for (let x = 1; x <= 4; x++) add(x, 3, H); // back of head, no face
+      for (let x = 1; x <= 4; x++) { add(x, 2, H); add(x, 3, H); } // back of head
       break;
   }
   return px;
@@ -142,44 +130,44 @@ function torso(
 // Exaggerated spread per the plan note (forward boot lower, back boot raised).
 function legs(
   pose: 'idle' | 'f0' | 'f1' | 'f2',
-  shorts: RGB,
+  _shorts: RGB,
   socks: RGB,
   skin: RGB,
   fdx: number,
 ): Px[] {
   const px: Px[] = [];
   const add = (x: number, y: number, c: RGB) => px.push({ x, y, c });
-  void shorts;
   const lx = 1;
   const rx = 4;
   const sh = Math.sign(fdx); // horizontal lean for side facings
 
-  const leg = (x: number, footY: number, lift: boolean) => {
+  // A planted leg: full skin thigh/shin, sock, boot. A forward leg reaches one
+  // pixel lower; a raised (trailing) leg pulls the boot up with no shin gap.
+  const planted = (x: number) => {
     add(x, 8, skin);
-    if (!lift) {
-      add(x, 9, socks);
-      add(x, footY, BLACK);
-    } else {
-      add(x, 9, skin);
-      add(x, footY, BLACK); // raised boot
-    }
+    add(x, 9, socks);
+    add(x, 10, BLACK);
+  };
+  const forward = (x: number) => {
+    add(x, 8, skin);
+    add(x, 9, skin);
+    add(x, 10, socks);
+    add(x, 11, BLACK); // reaches further down/forward
+  };
+  const raised = (x: number) => {
+    add(x, 8, skin);
+    add(x, 9, BLACK); // boot lifted, no lower shin
   };
 
-  if (pose === 'idle') {
-    leg(lx, 10, false);
-    leg(rx, 10, false);
-  } else if (pose === 'f1') {
-    // Passing pose: legs together, both mid.
-    leg(lx, 10, false);
-    leg(rx, 10, false);
+  if (pose === 'idle' || pose === 'f1') {
+    planted(lx);
+    planted(rx);
   } else if (pose === 'f0') {
-    // Left leg forward+lower, right leg back+raised.
-    leg(lx + sh, 11, false);
-    leg(rx, 9, true);
+    forward(lx + sh); // left leg forward
+    raised(rx);
   } else {
-    // Right leg forward+lower, left leg back+raised.
-    leg(rx + sh, 11, false);
-    leg(lx, 9, true);
+    forward(rx + sh); // right leg forward
+    raised(lx);
   }
   return px;
 }
