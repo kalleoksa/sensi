@@ -5,7 +5,7 @@ import { type GameState, type Player } from './state';
 import type { Camera } from './world';
 import { VIEW_W, VIEW_H } from './world';
 import type { BakedPitch } from './sprites/pitch_gen';
-import { buildAtlas, spriteFor, runFrame, CELL_W } from './sprites/player_gen';
+import { buildAtlas, spriteFor, runFrame, CELL_W, CELL_H } from './sprites/player_gen';
 import { css, SHADOW, WHITE } from './sprites/palette';
 
 // Where the feet sit inside a sprite cell (anchor for world placement).
@@ -36,8 +36,12 @@ function drawPlayer(
   const frame = p.state === 'run' ? runFrame(p.distance) : 0;
   const { canvas, flip } = spriteFor(atlas, p.state, p.dir, frame);
 
-  const dx = sx - FEET_X;
-  const dy = sy - FEET_Y;
+  // The slide is a laid-flat full-body pose centered in the cell, so anchor the
+  // cell center on the player's ground point; everything else anchors at feet.
+  const anchorX = p.state === 'slide' ? CELL_W / 2 : FEET_X;
+  const anchorY = p.state === 'slide' ? CELL_H / 2 : FEET_Y;
+  const dx = sx - anchorX;
+  const dy = sy - anchorY;
   if (flip) {
     ctx.save();
     ctx.translate(dx + CELL_W, dy);

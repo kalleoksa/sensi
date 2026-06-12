@@ -216,44 +216,48 @@ function slideSprite(f: Facing, frame: number, col: PlayerColors): Px[] {
     pyn = -fx;
   }
 
-  const cx = 2.0;
-  const cy = 7.0;
-  const reach = frame === 0 ? 3.0 : 3.8; // leg/boot extension along facing
+  // Centered in the cell (render anchors the slide on the cell center). The
+  // figure runs the full length of the cell so it reads as a full-size player.
+  const cx = 3.0;
+  const cy = 5.0;
+  const reach = frame === 0 ? 4.4 : 5.2; // boots far out along facing
   // Place a pixel at axis distance t (toward facing) and perpendicular p.
   const put = (t: number, p: number, c: RGB) =>
     add(cx + fx * t + pxn * p, cy + fy * t + pyn * p, c);
 
-  // Head (trailing end): a 2x2-ish hair mass with the crown to the back.
-  put(-2.6, 0, col.hair);
-  put(-2.6, -1, col.hair);
-  put(-2.2, -1, col.hair);
-  put(-2.2, 0, col.hair);
-  put(-2.2, 1, col.hair);
-  put(-1.8, 1, col.hair);
+  // Head (trailing end): a chunky hair mass with the crown to the back.
+  put(-4.0, 0, col.hair);
+  put(-4.0, -1, col.hair);
+  put(-3.3, -1, col.hair);
+  put(-3.3, 0, col.hair);
+  put(-3.3, 1, col.hair);
+  put(-2.7, 1, col.hair);
   // Face: skin with a bright eye highlight.
-  put(-1.7, -1, col.skin);
-  put(-1.5, 0, WHITE);
-  put(-1.4, 1, col.skin);
-  // Torso (shirt), 3px wide laid along the axis for body mass.
-  for (const t of [-1.0, -0.4, 0.2, 0.8]) {
+  put(-2.7, -1, col.skin);
+  put(-2.5, 0, WHITE);
+  put(-2.4, 1, col.skin);
+  // Torso (shirt), long and 3px wide for body mass.
+  for (const t of [-1.9, -1.2, -0.5, 0.2, 0.9]) {
     put(t, -1, col.shirt);
     put(t, 0, col.shirt);
     put(t, 1, col.shirt);
   }
-  // Shorts band. (+p is the "up" side; the player slides on its back so the
-  // legs/feet ride up toward facing.)
-  put(1.3, -0.3, col.shorts);
-  put(1.3, 0.5, col.shorts);
-  put(1.3, 1.3, col.shorts);
-  // Lower leg -> boot.
-  put(2.0, 0.4, col.socks);
-  put(2.7, 0.7, col.socks);
+  // Shorts band (two columns).
+  for (const t of [1.6, 2.2]) {
+    put(t, -0.3, col.shorts);
+    put(t, 0.6, col.shorts);
+    put(t, 1.3, col.shorts);
+  }
+  // Lower leg -> boot. (+p is the "up" side; the player slides on its back so
+  // the legs/feet ride up toward facing.)
+  put(2.9, 0.4, col.socks);
+  put(3.7, 0.7, col.socks);
   put(reach, 0.9, BLACK);
   // Upper leg -> boot (feet kicked up, slightly higher and shorter).
-  put(2.2, 1.5, col.socks);
-  put(reach - 0.5, 1.8, BLACK);
-  // Trailing hand reaching back-down near the head.
-  put(-0.6, -1.6, col.skin);
+  put(3.1, 1.6, col.socks);
+  put(reach - 0.6, 1.9, BLACK);
+  // Trailing hand reaching back near the head.
+  put(-1.7, -1.7, col.skin);
   return px;
 }
 
