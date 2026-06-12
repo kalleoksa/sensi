@@ -95,14 +95,13 @@ function gkAi(state: GameState, p: Player, dt: number): void {
 
 function positionHome(state: GameState, p: Player, dt: number): void {
   const b = state.ball;
-  // Shift the formation anchor toward the ball. Forwards follow play up the
-  // pitch hard (join attacks); defenders hold more shape. This keeps the team
-  // compact around the ball instead of sitting deep.
-  const wy = p.role === 'fwd' ? 0.95 : p.role === 'mid' ? 0.8 : 0.6;
-  const shiftX = (b.x - CX) * 0.6;
-  const shiftY = (b.y - MID_Y) * wy;
-  const tx = clamp(p.homeX + shiftX, FIELD_L + 4, FIELD_R - 4);
-  const ty = clamp(p.homeY + shiftY, FIELD_T + 6, FIELD_B - 6);
+  // Each player holds a point a role-weighted fraction of the way from THEIR
+  // OWN home toward the ball. Unlike a global shift (which shoved everyone
+  // past the field edge and clamped the whole team onto one line), this keeps
+  // the formation's relative spacing while the team tracks play as a unit.
+  const w = p.role === 'fwd' ? 0.5 : p.role === 'mid' ? 0.35 : 0.2;
+  const tx = clamp(p.homeX + (b.x - p.homeX) * w * 0.7, FIELD_L + 4, FIELD_R - 4);
+  const ty = clamp(p.homeY + (b.y - p.homeY) * w, FIELD_T + 6, FIELD_B - 6);
   moveToward(p, tx, ty, dt, AI_SPEED * 0.92);
 }
 
