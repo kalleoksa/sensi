@@ -245,15 +245,16 @@ function slideSprite(f: Facing, frame: number, col: PlayerColors): Px[] {
   // Hip / shorts.
   put(0.6, 0.0, col.shorts);
   put(0.6, 0.7, col.shorts);
-  // Straight tackling leg: extended low along the ground, boot at the far end.
-  limb(1.3, 0.1, col.shorts);
-  limb(2.2, 0.2, col.socks);
-  limb(3.1, 0.3, col.socks);
-  limb(4.0, 0.4, BLACK);
-  // Bent leg: knee/shin up, short, boot up.
-  limb(1.2, 1.0, col.shorts);
-  limb(1.7, 1.8, col.socks);
-  limb(1.9, 2.6, BLACK);
+  // Straight tackling leg: extended low along the ground (down side), boot at
+  // the far end.
+  limb(1.3, -0.3, col.shorts);
+  limb(2.3, -0.4, col.socks);
+  limb(3.2, -0.5, col.socks);
+  limb(4.1, -0.6, BLACK);
+  // Bent leg: knee/shin up, short, boot kicked up.
+  limb(1.2, 0.9, col.shorts);
+  limb(1.7, 1.7, col.socks);
+  limb(1.9, 2.5, BLACK);
   // Raised arm: trailing shoulder up to a skin hand.
   limb(-0.6, 1.0, col.shirt);
   limb(-0.4, 1.9, col.shirt);
