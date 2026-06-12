@@ -238,6 +238,60 @@ function bakeMarkings(b: Buf): void {
   }
 }
 
+// --- Stadium decoration (crowd + ad boards) around the pitch ---------------
+
+const CROWD_COLORS: RGB[] = [
+  [228, 107, 54],
+  [241, 125, 50],
+  [126, 71, 40],
+  [160, 90, 50],
+  [200, 160, 120],
+  [90, 50, 30],
+  [240, 200, 90],
+  [220, 220, 210],
+  [180, 70, 35],
+];
+const BARRIER: RGB = [170, 174, 178];
+const BARRIER_D: RGB = [120, 124, 128];
+const BOARD_PANELS: RGB[] = [
+  [10, 10, 30],
+  [199, 60, 32],
+  [150, 60, 20],
+];
+const BOARD_TEXT: RGB = [238, 238, 232];
+
+const CROWD_W = 26; // outer crowd band
+const BOARD_W = 6; // ad boards between crowd and run-off grass
+
+// Decorate one border pixel. `d` = distance to the world edge; `perim` = the
+// coordinate running along the stand (so rows are parallel to the pitch).
+function decorate(b: Buf, x: number, y: number, d: number, perim: number): void {
+  if (d < CROWD_W) {
+    // Crowd in rows: 3px-deep rows of 2px-wide heads, barrier rails every 5th
+    // row, sparse waving arms above the heads.
+    const row = Math.floor(d / 3);
+    if (row % 5 === 0 && d % 3 === 0) {
+      b.set(x, y, perim % 2 === 0 ? BARRIER : BARRIER_D);
+      return;
+    }
+    const h = pixelHash(perim >> 1, row * 131 + (d % 3));
+    if (h % 100 < 4) {
+      b.set(x, y, [235, 178, 122]); // waving arm
+      return;
+    }
+    b.set(x, y, CROWD_COLORS[pixelHash(perim >> 1, row) % CROWD_COLORS.length]);
+    return;
+  }
+  // Ad boards: colored panels with a white dashed "text" row.
+  const panel = BOARD_PANELS[Math.floor(perim / 44) % BOARD_PANELS.length];
+  const inBoard = d - CROWD_W;
+  if (inBoard === Math.floor(BOARD_W / 2) && perim % 7 < 4 && pixelHash(perim, 7) % 5 > 0) {
+    b.set(x, y, BOARD_TEXT);
+    return;
+  }
+  b.set(x, y, panel);
+}
+
 export function bakePitch(): BakedPitch {
   const canvas = makeCanvas(WORLD_W, WORLD_H);
   const ctx = canvas.getContext('2d')!;
@@ -253,6 +307,21 @@ export function bakePitch(): BakedPitch {
         base = base === GRASS_D ? GRASS_DD : GRASS_D;
       }
       b.set(x, y, base);
+    }
+  }
+
+  // Stadium ring: crowd + boards in the outer border, run-off grass inside.
+  for (let y = 0; y < WORLD_H; y++) {
+    for (let x = 0; x < WORLD_W; x++) {
+      const dl = x;
+      const dr = WORLD_W - 1 - x;
+      const dt = y;
+      const db = WORLD_H - 1 - y;
+      const d = Math.min(dl, dr, dt, db);
+      if (d >= CROWD_W + BOARD_W) continue;
+      // Perimeter coordinate runs along whichever stand this pixel is in.
+      const perim = d === dt || d === db ? x : y;
+      decorate(b, x, y, d, perim);
     }
   }
 
