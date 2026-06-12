@@ -10,6 +10,7 @@
 import {
   SKIN as DEF_SKIN,
   BLACK,
+  WHITE,
   type RGB,
 } from './palette';
 import { Dir, type Dir8, type PlayerState } from '../state';
@@ -188,31 +189,71 @@ function kickLeg(fdx: number, fdy: number, socks: RGB, skin: RGB): Px[] {
   return px;
 }
 
-// --- Slide tackle legs -----------------------------------------------------
-// Keeps the full upright head + torso (so the player stays full-sized) and
-// thrusts both legs toward the facing direction into a lunging tackle. Reach
-// grows on frame 1. Drawn from the hips (row 8) outward along (fdx, fdy).
-function slideLegs(frame: number, fdx: number, fdy: number, socks: RGB, skin: RGB): Px[] {
+// --- Slide tackle ----------------------------------------------------------
+// A full-bodied figure laid flat ALONG the slide direction: head trailing,
+// torso (with real width) laid out, legs/boots thrust toward facing, one limb
+// kicked up. Built as its own sprite (not the upright torso) so the form
+// matches the reference; widened so it stays the size of a standing player.
+const FACING_VEC: Record<Facing, [number, number]> = {
+  U: [0, -1],
+  UR: [0.7, -0.7],
+  R: [1, 0],
+  DR: [0.7, 0.7],
+  D: [0, 1],
+};
+
+function slideSprite(f: Facing, frame: number, col: PlayerColors): Px[] {
+  const [fx, fy] = FACING_VEC[f];
   const px: Px[] = [];
   const add = (x: number, y: number, c: RGB) =>
     px.push({ x: Math.round(x), y: Math.round(y), c });
-  const reach = frame === 0 ? 2 : 3;
-  const spread = frame === 0 ? 0.8 : 1.3; // legs splay apart for a lunge read
-  const perpx = fdy; // perpendicular to the slide axis
-  const perpy = -fdx;
-  for (const hx of [1, 4]) {
-    const sign = hx === 1 ? -1 : 1; // left leg out one way, right leg the other
-    add(hx, 8, skin); // skin thigh at the hip
-    // Solid leg from hip (row 9) out to a splayed boot, no gaps.
-    const hy = 9;
-    const bx = hx + fdx * reach + perpx * spread * sign;
-    const by = hy + fdy * reach + perpy * spread * sign;
-    const steps = Math.max(1, Math.round(Math.max(Math.abs(bx - hx), Math.abs(by - hy))));
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
-      add(hx + (bx - hx) * t, hy + (by - hy) * t, i === steps ? BLACK : socks);
-    }
+
+  // Perpendicular axis, chosen to point "up" the screen (raised limb side).
+  let pxn = -fy;
+  let pyn = fx;
+  if (pyn > 0) {
+    pxn = fy;
+    pyn = -fx;
   }
+
+  const cx = 2.0;
+  const cy = 7.0;
+  const reach = frame === 0 ? 3.0 : 3.8; // leg/boot extension along facing
+  // Place a pixel at axis distance t (toward facing) and perpendicular p.
+  const put = (t: number, p: number, c: RGB) =>
+    add(cx + fx * t + pxn * p, cy + fy * t + pyn * p, c);
+
+  // Head (trailing end): a 2x2-ish hair mass with the crown to the back.
+  put(-2.6, 0, col.hair);
+  put(-2.6, -1, col.hair);
+  put(-2.2, -1, col.hair);
+  put(-2.2, 0, col.hair);
+  put(-2.2, 1, col.hair);
+  put(-1.8, 1, col.hair);
+  // Face: skin with a bright eye highlight.
+  put(-1.7, -1, col.skin);
+  put(-1.5, 0, WHITE);
+  put(-1.4, 1, col.skin);
+  // Torso (shirt), 3px wide laid along the axis for body mass.
+  for (const t of [-1.0, -0.4, 0.2, 0.8]) {
+    put(t, -1, col.shirt);
+    put(t, 0, col.shirt);
+    put(t, 1, col.shirt);
+  }
+  // Shorts band. (+p is the "up" side; the player slides on its back so the
+  // legs/feet ride up toward facing.)
+  put(1.3, -0.3, col.shorts);
+  put(1.3, 0.5, col.shorts);
+  put(1.3, 1.3, col.shorts);
+  // Lower leg -> boot.
+  put(2.0, 0.4, col.socks);
+  put(2.7, 0.7, col.socks);
+  put(reach, 0.9, BLACK);
+  // Upper leg -> boot (feet kicked up, slightly higher and shorter).
+  put(2.2, 1.5, col.socks);
+  put(reach - 0.5, 1.8, BLACK);
+  // Trailing hand reaching back-down near the head.
+  put(-0.6, -1.6, col.skin);
   return px;
 }
 
@@ -244,14 +285,16 @@ function buildCell(
       armR = 4;
     }
   }
+  // Slide is its own laid-flat full-body pose, not the upright torso + legs.
+  if (state === 'slide') {
+    return slideSprite(f, frame, col);
+  }
   const px: Px[] = [
     ...head(f, col.hair, col.skin),
     ...torso(f, col.shirt, col.shorts, col.skin, armL, armR),
   ];
   if (state === 'kick') {
     px.push(...kickLeg(fdx, fdy, col.socks, col.skin));
-  } else if (state === 'slide') {
-    px.push(...slideLegs(frame, fdx, fdy, col.socks, col.skin));
   } else if (state === 'run') {
     px.push(...legs(poseForRunFrame(frame), col.shorts, col.socks, col.skin, fdx));
   } else {
