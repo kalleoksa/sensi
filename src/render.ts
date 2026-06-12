@@ -197,12 +197,12 @@ export function makeRenderer(
       ctx.fillRect(hx + 1, hy + 1, Math.round(12 * frac), 1);
     }
 
-    // 6. Score HUD, top-center: "T0 - T1". Flashes brighter just after a goal.
+    // 6. Score HUD, top-left corner (out of the way of the goals when the
+    // camera pans to either end): "T0 - T1". Flashes yellow just after a goal.
     const scoreText = `${match.score[0]}-${match.score[1]}`;
     const tw = scoreText.length * 4 - 1;
-    const tx = Math.round((VIEW_W - tw) / 2);
+    const tx = 4;
     const ty = 4;
-    // Backing for legibility over grass.
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillRect(tx - 2, ty - 2, tw + 4, 9);
     drawText(ctx, scoreText, tx, ty, match.flash > 0 ? 'rgb(250,230,90)' : 'rgb(236,240,226)');

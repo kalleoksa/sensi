@@ -2,7 +2,7 @@
 // One step == one fixed 60Hz tick (dt in seconds).
 
 import type { Ball } from './state';
-import { WORLD_W, WORLD_H } from './world';
+import { WORLD_W, WORLD_H, FIELD_T, FIELD_B, CX, GOAL_W, GOAL_DEPTH } from './world';
 
 export const GRAVITY = 360; // px/s^2 on vz (lighter = balls hang longer)
 export const BOUNCE = 0.6; // vertical restitution
@@ -93,6 +93,29 @@ export function stepBall(b: Ball, dt: number): void {
   } else if (b.y > WORLD_H - BALL_RADIUS) {
     b.y = WORLD_H - BALL_RADIUS;
     b.vy = -b.vy * 0.4;
+  }
+
+  // Net containment: inside the goal mouth (and below the bar), the ball is
+  // caught by the netting instead of passing through to the world edge.
+  const inMouth = Math.abs(b.x - CX) < GOAL_W / 2;
+  if (inMouth && b.z < 18) {
+    if (b.y < FIELD_T) {
+      const back = FIELD_T - GOAL_DEPTH + 2;
+      if (b.y < back) {
+        b.y = back;
+        b.vy = Math.abs(b.vy) * 0.15; // bounce off the back, downward into net
+      }
+      b.vx *= 0.8;
+      b.vy *= 0.8;
+    } else if (b.y > FIELD_B) {
+      const back = FIELD_B + GOAL_DEPTH - 2;
+      if (b.y > back) {
+        b.y = back;
+        b.vy = -Math.abs(b.vy) * 0.15;
+      }
+      b.vx *= 0.8;
+      b.vy *= 0.8;
+    }
   }
 
   if (b.aftertouch > 0) b.aftertouch = Math.max(0, b.aftertouch - dt);

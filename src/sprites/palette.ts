@@ -11,8 +11,10 @@ export const GRASS_DD: RGB = [144, 168, 27]; // mottle noise
 export const LINE: RGB = [236, 240, 226];
 export const POST: RGB = [234, 236, 215];
 export const CROSSBAR_UNDER: RGB = [170, 172, 162]; // shaded crossbar underside
-export const NET: RGB = [150, 152, 146];
-export const NET_BG: RGB = [71, 106, 4];
+export const NET: RGB = [150, 152, 146]; // net floor light dots
+export const NET_BG: RGB = [71, 106, 4]; // net floor base (dark green)
+export const NET_WALL: RGB = [198, 200, 193]; // lit back wall (upper, in light)
+export const NET_WALL_DOT: RGB = [172, 174, 166]; // back-wall mesh dots
 export const SHADOW: RGB = [86, 120, 8]; // all cast shadows, checkered 50%
 
 export const SKIN: RGB = [235, 178, 122];

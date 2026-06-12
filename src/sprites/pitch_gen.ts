@@ -13,6 +13,8 @@ import {
   CROSSBAR_UNDER,
   NET,
   NET_BG,
+  NET_WALL,
+  NET_WALL_DOT,
   SHADOW,
   type RGB,
 } from './palette';
@@ -98,12 +100,20 @@ function goalSolids(top: boolean): GoalPixel[] {
   // y as a function of depth d (0 at the line, GOAL_DEPTH at the back).
   const yAt = (d: number) => (top ? lineY - d : lineY + d);
 
-  // Net mesh fills depths (0, GOAL_DEPTH).
+  // Net fills depths (0, GOAL_DEPTH) with a 3D read: the part near the back
+  // (toward the crossbar) is the lit back wall (light gray dot grid); the part
+  // toward the mouth is the net floor receding away (dark green, sparse dots).
+  const wallStart = GOAL_DEPTH * 0.5;
   for (let d = 1; d < GOAL_DEPTH; d++) {
     const y = yAt(d);
     for (let x = gx0; x <= gx1; x++) {
-      const mesh = x % 2 === 0 || y % 2 === 0 ? NET : NET_BG;
-      out.push({ x, y, z: d, c: mesh });
+      let c: RGB;
+      if (d >= wallStart) {
+        c = x % 2 === 0 && y % 2 === 0 ? NET_WALL_DOT : NET_WALL;
+      } else {
+        c = x % 2 === 0 && y % 2 === 0 ? NET : NET_BG;
+      }
+      out.push({ x, y, z: d, c });
     }
   }
   // Side posts (2px each side), full depth.
