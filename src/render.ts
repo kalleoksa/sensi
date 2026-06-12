@@ -71,10 +71,12 @@ function drawPlayerShadow(ctx: CanvasRenderingContext2D, p: Player, cam: Camera,
   const wx = lerp(p.prevX, p.x, alpha);
   const wy = lerp(p.prevY, p.y, alpha);
   if (p.z < 1) {
-    // Grounded: small blob hugging the feet, nudged 1px right (sun upper-left).
-    const sx = Math.round(wx - cam.x) + 1;
-    const sy = Math.round(wy - cam.y) - 1;
-    checkerShadow(ctx, sx - 2, sy, 5, 2);
+    // Grounded: body flattened down-right (sun upper-left) into a diagonal
+    // blob, like the reference. Two offset rows give the angled read.
+    const sx = Math.round(wx - cam.x);
+    const sy = Math.round(wy - cam.y);
+    checkerShadow(ctx, sx - 1, sy - 2, 5, 2); // near the feet
+    checkerShadow(ctx, sx + 1, sy, 5, 2); // shifted down-right (the "tail")
   } else {
     // Airborne: project by height down-right.
     const sx = Math.round(wx - cam.x + 1.4 * p.z);
@@ -105,8 +107,8 @@ export function makeRenderer(
       const bz = lerp(b.prevZ, b.z, alpha);
       // Ball shadow sits down-right (sun upper-left); rises away when airborne.
       const ssx = Math.round(bx - cam.x + 1 + 1.4 * bz);
-      const ssy = Math.round(by - cam.y + 1 + 0.5 * bz);
-      checkerShadow(ctx, ssx - 1, ssy, 3, 2);
+      const ssy = Math.round(by - cam.y + 2 + 0.5 * bz);
+      checkerShadow(ctx, ssx - 1, ssy, 4, 2);
     }
 
     // 3. Entities, y-sorted (feet/ground y), lifted by z.
@@ -123,14 +125,18 @@ export function makeRenderer(
         const bz = lerp(b.prevZ, b.z, alpha);
         const px = Math.round(bx - cam.x) - 1;
         const py = Math.round(by - cam.y - bz) - 1;
-        // 3x3 ball with trimmed corners (round read): white body, shaded
-        // underside, bright top highlight.
+        // 4x4 football, corners trimmed for a round read: white body with
+        // black spots, shaded underside, bright top highlight.
         ctx.fillStyle = css(WHITE);
-        ctx.fillRect(px + 1, py, 1, 1); // top
-        ctx.fillRect(px, py + 1, 3, 1); // middle row
-        ctx.fillRect(px + 1, py + 2, 1, 1); // bottom
+        ctx.fillRect(px + 1, py, 2, 1); // top row
+        ctx.fillRect(px, py + 1, 4, 1); // upper-mid
+        ctx.fillRect(px, py + 2, 4, 1); // lower-mid
+        ctx.fillRect(px + 1, py + 3, 2, 1); // bottom row
+        ctx.fillStyle = 'rgb(28,30,28)';
+        ctx.fillRect(px + 2, py + 1, 1, 1); // spot
+        ctx.fillRect(px + 1, py + 2, 1, 1); // spot
         ctx.fillStyle = 'rgb(150,152,146)';
-        ctx.fillRect(px + 1, py + 2, 1, 1); // shaded underside
+        ctx.fillRect(px + 1, py + 3, 2, 1); // shaded underside
         ctx.fillStyle = 'rgb(255,255,250)';
         ctx.fillRect(px + 1, py, 1, 1); // highlight
       },

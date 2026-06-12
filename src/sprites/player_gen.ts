@@ -55,6 +55,9 @@ function facingOf(dir: Dir8): Facing {
 
 // --- Head (rows 0..3) ------------------------------------------------------
 // Hair-dominant cap with a 1px face sliver whose placement reads the facing.
+// Warm highlight for the face (the bright dot visible on reference faces).
+const FACE_HI: RGB = [250, 206, 150];
+
 function head(f: Facing, hair: RGB, skin: RGB): Px[] {
   const H = hair;
   const S = skin;
@@ -74,13 +77,13 @@ function head(f: Facing, hair: RGB, skin: RGB): Px[] {
       add(1, 2, H); // keep sideburns, face below
       add(4, 2, H);
       add(2, 3, S);
-      add(3, 3, S); // small face sliver
+      add(3, 3, FACE_HI); // small face sliver with a bright highlight
       add(1, 3, H);
       add(4, 3, H);
       break;
     case 'DR':
       add(2, 3, S);
-      add(3, 3, S);
+      add(3, 3, FACE_HI);
       add(4, 3, S); // face turned slightly to facing side
       add(1, 3, H);
       break;
