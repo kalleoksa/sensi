@@ -261,8 +261,12 @@ export function controlHuman(state: GameState, p: Player, input: InputFrame, dt:
 
   integrate(p, dt);
 
-  // --- Aftertouch: held dpad bends the ball during the post-kick window ---
-  if (state.ball.aftertouch > 0 && (input.dx !== 0 || input.dy !== 0)) {
+  // --- Aftertouch: the kicker's held dpad bends the ball post-kick ---
+  if (
+    state.ball.aftertouch > 0 &&
+    state.ball.owner === p &&
+    (input.dx !== 0 || input.dy !== 0)
+  ) {
     const len = Math.hypot(input.dx, input.dy);
     applyAftertouch(state.ball, input.dx / len, input.dy / len, dt);
   }

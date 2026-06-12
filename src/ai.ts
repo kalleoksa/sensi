@@ -113,7 +113,7 @@ export function updateTeamAi(state: GameState, dt: number): void {
   const nearest: (Player | null)[] = [null, null];
   const nd = [Infinity, Infinity];
   for (const p of state.players) {
-    if (p.role === 'gk' || p === state.controlled) continue;
+    if (p.role === 'gk' || p === state.controlled || p === state.controlled2) continue;
     const d = Math.hypot(p.x - b.x, p.y - b.y);
     if (d < nd[p.team]) {
       nd[p.team] = d;
@@ -122,7 +122,7 @@ export function updateTeamAi(state: GameState, dt: number): void {
   }
 
   for (const p of state.players) {
-    if (p === state.controlled) continue; // human drives this one
+    if (p === state.controlled || p === state.controlled2) continue; // human-driven
     if (p.role === 'gk') {
       gkAi(state, p, dt);
       continue;

@@ -167,12 +167,16 @@ export function makeRenderer(
     items.sort((a, c) => a.y - c.y);
     for (const it of items) it.draw();
 
-    // Controlled-player indicator: a small downward chevron above the head.
-    if (state.controlled) {
-      const p = state.controlled;
+    // Controlled-player indicators: a small downward chevron above the head
+    // (white for P1's red player, yellow for P2's blue player).
+    for (const [p, color] of [
+      [state.controlled, 'rgb(250,250,240)'],
+      [state.controlled2, 'rgb(245,215,80)'],
+    ] as const) {
+      if (!p) continue;
       const ix = Math.round(lerp(p.prevX, p.x, alpha) - cam.x);
       const iy = Math.round(lerp(p.prevY, p.y, alpha) - cam.y) - 17;
-      ctx.fillStyle = 'rgb(250,250,240)';
+      ctx.fillStyle = color;
       ctx.fillRect(ix - 2, iy, 5, 1);
       ctx.fillRect(ix - 1, iy + 1, 3, 1);
       ctx.fillRect(ix, iy + 2, 1, 1);

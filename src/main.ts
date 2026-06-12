@@ -3,7 +3,7 @@
 
 import { VIEW_W, VIEW_H, WORLD_W, makeCamera, updateCamera, FIELD_T, FIELD_B, CX } from './world';
 import { startLoop } from './loop';
-import { initInput, consumeInput } from './input';
+import { initInput, consumeInputs } from './input';
 import { bakePitch } from './sprites/pitch_gen';
 import { makeRenderer } from './render';
 import { makeBall, stepBall } from './ball';
@@ -45,21 +45,23 @@ const state: GameState = {
   camera: makeCamera(),
   carrier: null,
   controlled: null,
+  controlled2: null,
 };
 const match = makeMatch();
+let twoPlayer = false; // toggled with "2": P2 = arrows + Enter, drives blue
 resetKickoff(state);
 
-// The human drives the team-0 player nearest the ball (carrier if team 0 has
-// it). A little stickiness avoids flicker when two players are equidistant.
-function pickControlled(s: GameState): Player {
+// Each human drives their team's player nearest the ball (carrier if their
+// team has it). A little stickiness avoids flicker when two are equidistant.
+function pickControlled(s: GameState, team: 0 | 1, current: Player | null): Player {
   const b = s.ball;
-  if (s.carrier && s.carrier.team === 0 && s.carrier.role !== 'gk') return s.carrier;
-  let best: Player | null = s.controlled;
-  let bestD = best && best.team === 0 && best.role !== 'gk'
-    ? Math.hypot(best.x - b.x, best.y - b.y) * 0.8 // stickiness factor
+  if (s.carrier && s.carrier.team === team && s.carrier.role !== 'gk') return s.carrier;
+  let best: Player | null = current;
+  let bestD = current && current.team === team && current.role !== 'gk'
+    ? Math.hypot(current.x - b.x, current.y - b.y) * 0.8 // stickiness factor
     : Infinity;
   for (const p of s.players) {
-    if (p.team !== 0 || p.role === 'gk') continue;
+    if (p.team !== team || p.role === 'gk') continue;
     const d = Math.hypot(p.x - b.x, p.y - b.y);
     if (d < bestD) {
       bestD = d;
@@ -72,9 +74,13 @@ function pickControlled(s: GameState): Player {
 // Center the camera on the ball at kickoff.
 updateCamera(state.camera, state.ball.x, state.ball.y, 0, 0, 1);
 
-// Dev: reset to kickoff with R (keeps score); expose state for inspection.
+// R resets to kickoff (keeps score); "2" toggles two-player mode.
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyR') resetKickoff(state);
+  if (e.code === 'Digit2') {
+    twoPlayer = !twoPlayer;
+    state.controlled2 = null;
+  }
 });
 (window as unknown as { __game: GameState }).__game = state;
 (window as unknown as { __match: unknown }).__match = match;
@@ -86,12 +92,18 @@ window.addEventListener('keydown', (e) => {
 };
 
 function step(dt: number): void {
-  const input = consumeInput();
+  const input = consumeInputs(twoPlayer);
   // Freeze player control during the post-goal pause, but keep the ball rolling
   // so it travels into the net during the goal celebration.
   if (match.phase === 'play') {
-    state.controlled = pickControlled(state);
-    controlHuman(state, state.controlled, input, dt);
+    state.controlled = pickControlled(state, 0, state.controlled);
+    controlHuman(state, state.controlled, input.p1, dt);
+    if (input.p2) {
+      state.controlled2 = pickControlled(state, 1, state.controlled2);
+      controlHuman(state, state.controlled2, input.p2, dt);
+    } else {
+      state.controlled2 = null;
+    }
     updateTeamAi(state, dt);
     resolveSlideTackles(state);
     resolvePossession(state, dt);

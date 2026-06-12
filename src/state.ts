@@ -93,4 +93,6 @@ export interface GameState {
   carrier: Player | null;
   // The team-0 player the human currently drives (auto-switches to nearest).
   controlled: Player | null;
+  // Second local player's controlled team-1 player (null in one-player mode).
+  controlled2: Player | null;
 }
