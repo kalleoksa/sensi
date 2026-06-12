@@ -1,0 +1,354 @@
+// Procedural player sprite atlas. Ports run_anim.py's hair-dominant little
+// Sensi player and generalizes it to 5 base directions (U, UR, R, DR, D) and
+// the states we need for the playable slice. Left-facing dirs (UL, L, DL) are
+// the right-facing sprites drawn mirrored — see spriteFor().
+//
+// Atlases are generated parametrically per color-combo and cached, which is the
+// same end result as the getImageData palette-swap described in the plan but
+// simpler (a handful of combos, generated once at boot).
+
+import {
+  SKIN as DEF_SKIN,
+  BLACK,
+  type RGB,
+} from './palette';
+import { Dir, type Dir8, type PlayerState } from '../state';
+
+export const CELL_W = 12;
+export const CELL_H = 16;
+const OX = 3; // body origin within the cell (3px margin for kick/slide reach)
+const OY = 3;
+
+export interface PlayerColors {
+  shirt: RGB;
+  shorts: RGB;
+  socks: RGB;
+  hair: RGB;
+  skin: RGB;
+}
+
+export interface Atlas {
+  key: string;
+  cells: Map<string, HTMLCanvasElement>; // `${state}_${dir}_${frame}`
+}
+
+// Base directions we actually draw. Index here matches Dir8 values 0..4.
+const BASE_DIRS: Dir8[] = [Dir.U, Dir.UR, Dir.R, Dir.DR, Dir.D];
+
+type Px = { x: number; y: number; c: RGB };
+type Facing = 'U' | 'UR' | 'R' | 'DR' | 'D';
+
+function facingOf(dir: Dir8): Facing {
+  switch (dir) {
+    case Dir.U:
+      return 'U';
+    case Dir.UR:
+      return 'UR';
+    case Dir.R:
+      return 'R';
+    case Dir.DR:
+      return 'DR';
+    default:
+      return 'D';
+  }
+}
+
+// --- Head (rows 0..3) ------------------------------------------------------
+// Hair-dominant cap with a 1px face sliver whose placement reads the facing.
+function head(f: Facing, hair: RGB, skin: RGB): Px[] {
+  const H = hair;
+  const S = skin;
+  const px: Px[] = [];
+  const add = (x: number, y: number, c: RGB) => px.push({ x, y, c });
+  // Common hair cap.
+  for (let x = 1; x <= 4; x++) {
+    add(x, 0, H);
+    add(x, 1, H);
+  }
+  add(0, 2, H);
+  add(5, 2, H);
+  for (let x = 1; x <= 4; x++) add(x, 2, H);
+
+  switch (f) {
+    case 'D':
+      for (let x = 1; x <= 4; x++) add(x, 3, S); // full face
+      break;
+    case 'DR':
+      for (let x = 1; x <= 4; x++) add(x, 3, S);
+      add(5, 2, S); // cheek toward facing side
+      break;
+    case 'R':
+      add(4, 2, S);
+      add(5, 2, S); // ear/cheek
+      add(3, 3, S);
+      add(4, 3, S); // narrow profile face
+      break;
+    case 'UR':
+      add(5, 2, S); // sliver of cheek
+      add(3, 3, H);
+      add(4, 3, H); // mostly back of head
+      add(1, 3, H);
+      add(2, 3, H);
+      break;
+    case 'U':
+      for (let x = 1; x <= 4; x++) add(x, 3, H); // back of head, no face
+      break;
+  }
+  return px;
+}
+
+// --- Torso + arms (rows 4..7) ---------------------------------------------
+// armL/armR give the row (4..6) of each hand for the counter-swing.
+function torso(
+  f: Facing,
+  shirt: RGB,
+  shorts: RGB,
+  skin: RGB,
+  armL: number,
+  armR: number,
+): Px[] {
+  const px: Px[] = [];
+  const add = (x: number, y: number, c: RGB) => px.push({ x, y, c });
+  for (let x = 1; x <= 4; x++) {
+    add(x, 4, shirt);
+    add(x, 5, shirt);
+  }
+  add(0, 4, shirt); // shoulders
+  add(5, 4, shirt);
+  // Side/diagonal facings: narrow the trailing shoulder a touch.
+  if (f === 'R') {
+    add(5, 4, shirt);
+  }
+  add(0, armL, skin); // hands
+  add(5, armR, skin);
+  for (let x = 1; x <= 4; x++) {
+    add(x, 6, shorts);
+    add(x, 7, shorts);
+  }
+  return px;
+}
+
+// --- Legs (rows 8..11) -----------------------------------------------------
+// pose: 'idle' | 'f0'(left fwd) | 'f1'(together) | 'f2'(right fwd)
+// Exaggerated spread per the plan note (forward boot lower, back boot raised).
+function legs(
+  pose: 'idle' | 'f0' | 'f1' | 'f2',
+  shorts: RGB,
+  socks: RGB,
+  skin: RGB,
+  fdx: number,
+): Px[] {
+  const px: Px[] = [];
+  const add = (x: number, y: number, c: RGB) => px.push({ x, y, c });
+  void shorts;
+  const lx = 1;
+  const rx = 4;
+  const sh = Math.sign(fdx); // horizontal lean for side facings
+
+  const leg = (x: number, footY: number, lift: boolean) => {
+    add(x, 8, skin);
+    if (!lift) {
+      add(x, 9, socks);
+      add(x, footY, BLACK);
+    } else {
+      add(x, 9, skin);
+      add(x, footY, BLACK); // raised boot
+    }
+  };
+
+  if (pose === 'idle') {
+    leg(lx, 10, false);
+    leg(rx, 10, false);
+  } else if (pose === 'f1') {
+    // Passing pose: legs together, both mid.
+    leg(lx, 10, false);
+    leg(rx, 10, false);
+  } else if (pose === 'f0') {
+    // Left leg forward+lower, right leg back+raised.
+    leg(lx + sh, 11, false);
+    leg(rx, 9, true);
+  } else {
+    // Right leg forward+lower, left leg back+raised.
+    leg(rx + sh, 11, false);
+    leg(lx, 9, true);
+  }
+  return px;
+}
+
+// --- Kick (extended leading leg in the facing direction) -------------------
+function kickLeg(fdx: number, fdy: number, socks: RGB, skin: RGB): Px[] {
+  const px: Px[] = [];
+  const add = (x: number, y: number, c: RGB) => px.push({ x, y, c });
+  // Thrust the leading boot one cell out along facing.
+  const bx = 4 + Math.round(fdx * 2);
+  const by = 10 + Math.round(fdy > 0 ? 1 : fdy < 0 ? -1 : 0);
+  add(4, 8, skin);
+  add(bx, 9, socks);
+  add(bx, by, BLACK);
+  add(1, 9, socks); // planted leg
+  add(1, 10, BLACK);
+  add(1, 8, skin);
+  return px;
+}
+
+// --- Slide (body pitched forward, leg extended) ----------------------------
+function slidePose(frame: number, fdx: number, fdy: number, socks: RGB, skin: RGB): Px[] {
+  const px: Px[] = [];
+  const add = (x: number, y: number, c: RGB) => px.push({ x, y, c });
+  const reach = frame === 0 ? 2 : 3;
+  const ex = 4 + Math.round(fdx * reach);
+  const ey = 10 + Math.round(fdy * reach * 0.4);
+  add(ex, ey, BLACK); // extended boot
+  add(ex, ey - 1, socks);
+  add(4, 9, skin);
+  add(1, 10, socks); // trailing leg tucked
+  add(1, 9, skin);
+  return px;
+}
+
+function poseForRunFrame(frame: number): 'f0' | 'f1' | 'f2' {
+  // CYCLE = [0,1,2,1] -> contact, pass, contact', pass
+  return frame === 0 ? 'f0' : frame === 2 ? 'f2' : 'f1';
+}
+
+// Build the pixel list for one sprite cell (local body coords, pre-offset).
+function buildCell(
+  state: PlayerState,
+  dir: Dir8,
+  frame: number,
+  col: PlayerColors,
+  fdx: number,
+  fdy: number,
+): Px[] {
+  const f = facingOf(dir);
+  let armL = 5;
+  let armR = 5;
+  if (state === 'run') {
+    const pose = poseForRunFrame(frame);
+    if (pose === 'f0') {
+      armL = 6 - 0; // (clamped into 4..6 below by row math)
+      armL = 4;
+      armR = 6;
+    } else if (pose === 'f2') {
+      armL = 6;
+      armR = 4;
+    }
+  }
+  const px: Px[] = [
+    ...head(f, col.hair, col.skin),
+    ...torso(f, col.shirt, col.shorts, col.skin, armL, armR),
+  ];
+  if (state === 'kick') {
+    px.push(...kickLeg(fdx, fdy, col.socks, col.skin));
+  } else if (state === 'slide') {
+    px.push(...slidePose(frame, fdx, fdy, col.socks, col.skin));
+  } else if (state === 'run') {
+    px.push(...legs(poseForRunFrame(frame), col.shorts, col.socks, col.skin, fdx));
+  } else {
+    px.push(...legs('idle', col.shorts, col.socks, col.skin, fdx));
+  }
+  return px;
+}
+
+function renderCell(px: Px[]): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = CELL_W;
+  c.height = CELL_H;
+  const ctx = c.getContext('2d')!;
+  const img = ctx.createImageData(CELL_W, CELL_H);
+  const d = img.data;
+  for (const { x, y, c: col } of px) {
+    const gx = x + OX;
+    const gy = y + OY;
+    if (gx < 0 || gy < 0 || gx >= CELL_W || gy >= CELL_H) continue;
+    const i = (gy * CELL_W + gx) * 4;
+    d[i] = col[0];
+    d[i + 1] = col[1];
+    d[i + 2] = col[2];
+    d[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+const STATE_FRAMES: Record<string, number> = {
+  idle: 1,
+  run: 3,
+  kick: 1,
+  slide: 2,
+  header: 1,
+  fallen: 1,
+};
+
+const cache = new Map<string, Atlas>();
+
+function colorKey(c: PlayerColors): string {
+  const j = (v: RGB) => v.join(',');
+  return `${j(c.shirt)}|${j(c.shorts)}|${j(c.socks)}|${j(c.hair)}|${j(c.skin)}`;
+}
+
+export function buildAtlas(colorsIn: Partial<PlayerColors> & Pick<PlayerColors, 'shirt' | 'shorts' | 'socks' | 'hair'>): Atlas {
+  const col: PlayerColors = { skin: DEF_SKIN, ...colorsIn };
+  const key = colorKey(col);
+  const hit = cache.get(key);
+  if (hit) return hit;
+
+  const cells = new Map<string, HTMLCanvasElement>();
+  const states: PlayerState[] = ['idle', 'run', 'kick', 'slide'];
+  // Facing vector per base dir for leg/kick thrust.
+  const FV: Record<number, [number, number]> = {
+    [Dir.U]: [0, -1],
+    [Dir.UR]: [0.7, -0.7],
+    [Dir.R]: [1, 0],
+    [Dir.DR]: [0.7, 0.7],
+    [Dir.D]: [0, 1],
+  };
+  for (const state of states) {
+    const frames = STATE_FRAMES[state] ?? 1;
+    for (const dir of BASE_DIRS) {
+      const [fdx, fdy] = FV[dir];
+      for (let frame = 0; frame < frames; frame++) {
+        cells.set(`${state}_${dir}_${frame}`, renderCell(buildCell(state, dir, frame, col, fdx, fdy)));
+      }
+    }
+  }
+  const atlas: Atlas = { key, cells };
+  cache.set(key, atlas);
+  return atlas;
+}
+
+// Resolve a sprite for any of the 8 directions; left dirs reuse the right-facing
+// sprite drawn mirrored.
+export function spriteFor(
+  atlas: Atlas,
+  state: PlayerState,
+  dir: Dir8,
+  frame: number,
+): { canvas: HTMLCanvasElement; flip: boolean } {
+  let baseDir = dir;
+  let flip = false;
+  if (dir === Dir.UL) {
+    baseDir = Dir.UR;
+    flip = true;
+  } else if (dir === Dir.L) {
+    baseDir = Dir.R;
+    flip = true;
+  } else if (dir === Dir.DL) {
+    baseDir = Dir.DR;
+    flip = true;
+  }
+  let st = state;
+  if (!STATE_FRAMES[st] || !atlas.cells.has(`${st}_${baseDir}_${Math.min(frame, (STATE_FRAMES[st] ?? 1) - 1)}`)) {
+    st = 'idle';
+  }
+  const maxFrame = (STATE_FRAMES[st] ?? 1) - 1;
+  const f = Math.max(0, Math.min(frame, maxFrame));
+  const canvas = atlas.cells.get(`${st}_${baseDir}_${f}`) ?? atlas.cells.get(`idle_${baseDir}_0`)!;
+  return { canvas, flip };
+}
+
+// Distance-driven run frame (CYCLE = [0,1,2,1]).
+const CYCLE = [0, 1, 2, 1];
+export function runFrame(distance: number): number {
+  return CYCLE[Math.floor(distance / 6) % 4];
+}
