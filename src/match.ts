@@ -4,7 +4,7 @@
 //
 // Team 0 attacks the TOP goal (decreasing y); team 1 attacks the BOTTOM.
 
-import type { GameState } from './state';
+import type { GameState, Player } from './state';
 import {
   FIELD_T,
   FIELD_B,
@@ -24,11 +24,14 @@ export interface Match {
   score: [number, number]; // [team0, team1]
   phase: 'play' | 'dead';
   deadTimer: number;
+  deadReset: boolean; // true => return to kickoff when the dead timer ends
   flash: number; // seconds remaining on the GOAL flash (HUD)
 }
 
+const RESTART_DEAD = 0.8; // brief pause to set up a throw-in / goal kick / corner
+
 export function makeMatch(): Match {
-  return { score: [0, 0], phase: 'play', deadTimer: 0, flash: 0 };
+  return { score: [0, 0], phase: 'play', deadTimer: 0, deadReset: false, flash: 0 };
 }
 
 // Kickoff: ball at center, every player back on its formation home.
@@ -61,8 +64,9 @@ function lastTouchTeam(state: GameState): 0 | 1 {
   return state.ball.owner ? state.ball.owner.team : 0;
 }
 
-// Park the ball dead at a restart spot, just inside the field, live again.
-function placeRestart(state: GameState, x: number, y: number): void {
+// Park the ball at a restart spot just inside the field and bring the nearest
+// restart-team player to take it, with a brief dead-ball pause to set up.
+function placeRestart(state: GameState, match: Match, x: number, y: number, team: 0 | 1): void {
   const b = state.ball;
   b.x = x;
   b.y = y;
@@ -75,12 +79,39 @@ function placeRestart(state: GameState, x: number, y: number): void {
   b.controlLock = RESTART_LOCK;
   b.owner = null;
   state.carrier = null;
+
+  // Nearest outfielder of the restart team comes to take it, placed just behind
+  // the ball (toward their own goal) so they face up the pitch.
+  let taker: Player | null = null;
+  let bestD = Infinity;
+  for (const p of state.players) {
+    if (p.team !== team || p.role === 'gk') continue;
+    const d = Math.hypot(p.x - x, p.y - y);
+    if (d < bestD) {
+      bestD = d;
+      taker = p;
+    }
+  }
+  if (taker) {
+    const behind = team === 0 ? 5 : -5;
+    taker.x = Math.max(FIELD_L + 2, Math.min(FIELD_R - 2, x));
+    taker.y = Math.max(FIELD_T + 2, Math.min(FIELD_B - 2, y + behind));
+    taker.prevX = taker.x;
+    taker.prevY = taker.y;
+    taker.vx = taker.vy = 0;
+    taker.state = 'idle';
+  }
+
+  match.phase = 'dead';
+  match.deadTimer = RESTART_DEAD;
+  match.deadReset = false;
 }
 
 function scoreGoal(_state: GameState, match: Match, scoringTeam: 0 | 1): void {
   match.score[scoringTeam]++;
   match.phase = 'dead';
   match.deadTimer = DEAD_TIME;
+  match.deadReset = true;
   match.flash = DEAD_TIME;
   // Don't reset yet — let the ball roll on into the net during the celebration.
   // resetKickoff happens when the dead timer elapses (see updateMatch).
@@ -92,8 +123,8 @@ export function updateMatch(state: GameState, match: Match, dt: number): void {
   if (match.phase === 'dead') {
     match.deadTimer -= dt;
     if (match.deadTimer <= 0) {
-      resetKickoff(state); // ball was in the net; now restart from center
-      match.phase = 'play';
+      if (match.deadReset) resetKickoff(state); // after a goal: back to center
+      match.phase = 'play'; // restarts just resume with the ball in place
     }
     return;
   }
@@ -114,22 +145,24 @@ export function updateMatch(state: GameState, match: Match, dt: number): void {
     const lineY = top ? FIELD_T : FIELD_B;
     const dir = top ? 1 : -1; // into-field direction
     const attackingTeam: 0 | 1 = top ? 0 : 1; // who attacks this line
+    const defendingTeam: 0 | 1 = top ? 1 : 0;
     if (lastTouchTeam(state) === attackingTeam) {
       // Goal kick for the defenders: ball at the six-yard box.
-      placeRestart(state, CX, lineY + dir * SIX_BOX_D);
+      placeRestart(state, match, CX, lineY + dir * SIX_BOX_D, defendingTeam);
     } else {
       // Corner for the attackers: nearest corner on the side the ball exited.
       const cornerX = b.x < CX ? FIELD_L + inset : FIELD_R - inset;
-      placeRestart(state, cornerX, lineY + dir * CORNER_R);
+      placeRestart(state, match, cornerX, lineY + dir * CORNER_R, attackingTeam);
     }
     return;
   }
 
-  // --- Touchlines (left / right): throw-in at the exit point ---
+  // --- Touchlines (left / right): throw-in to the team that didn't touch it ---
   if (b.x < FIELD_L || b.x > FIELD_R) {
     const x = b.x < FIELD_L ? FIELD_L + inset : FIELD_R - inset;
     const y = Math.max(FIELD_T + inset, Math.min(FIELD_B - inset, b.y));
-    placeRestart(state, x, y);
+    const throwTeam: 0 | 1 = lastTouchTeam(state) === 0 ? 1 : 0;
+    placeRestart(state, match, x, y, throwTeam);
     return;
   }
 }

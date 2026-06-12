@@ -68,10 +68,11 @@ function drawPlayer(
   const frame = p.state === 'run' ? runFrame(p.distance) : 0;
   const { canvas, flip } = spriteFor(atlas, p.state, p.dir, frame);
 
-  // The slide is a laid-flat full-body pose centered in the cell, so anchor the
-  // cell center on the player's ground point; everything else anchors at feet.
-  const anchorX = p.state === 'slide' ? CELL_W / 2 : FEET_X;
-  const anchorY = p.state === 'slide' ? CELL_H / 2 : FEET_Y;
+  // Slide and fallen are laid-flat full-body poses centered in the cell, so
+  // anchor the cell center on the ground point; others anchor at the feet.
+  const laidFlat = p.state === 'slide' || p.state === 'fallen';
+  const anchorX = laidFlat ? CELL_W / 2 : FEET_X;
+  const anchorY = laidFlat ? CELL_H / 2 : FEET_Y;
   const dx = sx - anchorX;
   const dy = sy - anchorY;
   if (flip) {

@@ -95,9 +95,12 @@ function gkAi(state: GameState, p: Player, dt: number): void {
 
 function positionHome(state: GameState, p: Player, dt: number): void {
   const b = state.ball;
-  // Shift the formation anchor toward the ball (team compactness/press).
-  const shiftX = (b.x - CX) * 0.35;
-  const shiftY = (b.y - MID_Y) * 0.4;
+  // Shift the formation anchor toward the ball. Forwards follow play up the
+  // pitch hard (join attacks); defenders hold more shape. This keeps the team
+  // compact around the ball instead of sitting deep.
+  const wy = p.role === 'fwd' ? 0.72 : p.role === 'mid' ? 0.58 : 0.4;
+  const shiftX = (b.x - CX) * 0.5;
+  const shiftY = (b.y - MID_Y) * wy;
   const tx = clamp(p.homeX + shiftX, FIELD_L + 4, FIELD_R - 4);
   const ty = clamp(p.homeY + shiftY, FIELD_T + 6, FIELD_B - 6);
   moveToward(p, tx, ty, dt, AI_SPEED * 0.92);
@@ -128,7 +131,8 @@ export function updateTeamAi(state: GameState, dt: number): void {
     }
     const teamHasBall = state.carrier != null && state.carrier.team === p.team;
     if (nearest[p.team] === p && !teamHasBall) {
-      moveToward(p, b.x, b.y, dt, AI_SPEED); // chase / press the ball
+      // Chase / press right onto the ball (arrive=1) so contact pokes it loose.
+      moveToward(p, b.x, b.y, dt, AI_SPEED, 1);
       continue;
     }
     positionHome(state, p, dt);

@@ -56,6 +56,9 @@ const KITS: Record<0 | 1, Kit> = {
   1: { shirt: KIT_BLUE, shorts: WHITE, socks: KIT_BLUE },
 };
 
+// Keepers wear a distinct kit (green) so they read apart from outfielders.
+const GK_KIT: Kit = { shirt: [40, 150, 78], shorts: [28, 30, 28], socks: [28, 30, 28] };
+
 function homeFor(team: 0 | 1, slot: Slot): { x: number; y: number } {
   const x = FIELD_L + slot.x * PLAY_W;
   // Own goal line and into-field direction differ per team.
@@ -65,8 +68,8 @@ function homeFor(team: 0 | 1, slot: Slot): { x: number; y: number } {
 }
 
 function makeTeam(team: 0 | 1, rng: Rng): Player[] {
-  const kit = KITS[team];
   return FORMATION.map((slot) => {
+    const kit = slot.role === 'gk' ? GK_KIT : KITS[team];
     const home = homeFor(team, slot);
     const init: PlayerInit = {
       x: home.x,

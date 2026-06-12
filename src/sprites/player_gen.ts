@@ -262,6 +262,34 @@ function slideSprite(f: Facing, frame: number, col: PlayerColors): Px[] {
   return px;
 }
 
+// Knocked-down player: lying flat on the ground, limbs splayed. Drawn centered
+// in the cell (render anchors fallen on the cell center, like slide).
+function fallenSprite(col: PlayerColors): Px[] {
+  const px: Px[] = [];
+  const add = (x: number, y: number, c: RGB) => px.push({ x, y, c });
+  const cy = 5;
+  // Head (left) + face.
+  add(0, cy, col.hair);
+  add(0, cy - 1, col.hair);
+  add(1, cy - 1, col.hair);
+  add(1, cy, col.skin);
+  // Torso laid horizontally.
+  for (let x = 2; x <= 4; x++) {
+    add(x, cy - 1, col.shirt);
+    add(x, cy, col.shirt);
+  }
+  // Sprawled arm up and hand.
+  add(2, cy - 2, col.skin);
+  // Shorts then splayed legs/boots.
+  add(5, cy - 1, col.shorts);
+  add(5, cy, col.shorts);
+  add(6, cy - 1, col.socks);
+  add(7, cy - 1, BLACK);
+  add(6, cy + 1, col.socks);
+  add(7, cy + 1, BLACK);
+  return px;
+}
+
 function poseForRunFrame(frame: number): 'f0' | 'f1' | 'f2' {
   // CYCLE = [0,1,2,1] -> contact, pass, contact', pass
   return frame === 0 ? 'f0' : frame === 2 ? 'f2' : 'f1';
@@ -290,9 +318,12 @@ function buildCell(
       armR = 4;
     }
   }
-  // Slide is its own laid-flat full-body pose, not the upright torso + legs.
+  // Slide and fallen are their own full-body poses, not the upright torso.
   if (state === 'slide') {
     return slideSprite(f, frame, col);
+  }
+  if (state === 'fallen') {
+    return fallenSprite(col);
   }
   const px: Px[] = [
     ...head(f, col.hair, col.skin),
@@ -352,7 +383,7 @@ export function buildAtlas(colorsIn: Partial<PlayerColors> & Pick<PlayerColors, 
   if (hit) return hit;
 
   const cells = new Map<string, HTMLCanvasElement>();
-  const states: PlayerState[] = ['idle', 'run', 'kick', 'slide'];
+  const states: PlayerState[] = ['idle', 'run', 'kick', 'slide', 'fallen'];
   // Facing vector per base dir for leg/kick thrust.
   const FV: Record<number, [number, number]> = {
     [Dir.U]: [0, -1],

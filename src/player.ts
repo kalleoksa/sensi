@@ -19,11 +19,13 @@ export const PLAYER_SPEED = 96; // px/s on the ground
 const SLIDE_SPEED = 168;
 const KICK_LOCK = 0.15;
 const SLIDE_LOCK = 0.4;
+export const FALLEN_LOCK = 0.6;
 
 // Possession / dribble tuning.
-const CONTROL_R = 12; // within this, a player is "near" the ball
-const TOUCH_R = 7; // ball gets nudged when this close to the carrier
-const NUDGE_BONUS = 34; // ball leads the carrier by this much speed
+const CONTROL_R = 13; // within this, a player is "near" the ball
+const DRIBBLE_LEAD = 6; // ball is kept this far ahead of the carrier's feet
+const DRIBBLE_SPRING = 11; // how hard the ball is held to the lead point
+const TACKLE_R = 8; // an opponent this close to the carrier pokes the ball loose
 
 // Kick tuning.
 const TAP_CHARGE = 0.16; // below this hold time, it's a pass not a shot
@@ -131,10 +133,9 @@ function strike(state: GameState, p: Player, charge: number): void {
   p.stateTimer = KICK_LOCK;
 }
 
-// Resolve who controls the ball (proximity, ball near ground) and apply the
-// dribble nudge. No stickiness: the ball is repeatedly poked ahead.
+// Resolve who controls the ball (proximity, ball near ground), keep it on the
+// dribbler's foot, and let a closing opponent poke it loose (a tackle).
 export function resolvePossession(state: GameState, dt: number): void {
-  void dt;
   const b = state.ball;
   let best: Player | null = null;
   let bestD = CONTROL_R;
@@ -151,19 +152,50 @@ export function resolvePossession(state: GameState, dt: number): void {
   state.carrier = best;
   if (!best) return;
 
-  const sp = Math.hypot(best.vx, best.vy);
-  const dist = Math.hypot(best.x - b.x, best.y - b.y);
-  if (sp > 18 && dist < TOUCH_R) {
-    // Poke the ball ahead along the carrier's facing.
-    const [fx, fy] = DIR_VEC[best.dir];
-    const nudge = sp + NUDGE_BONUS;
-    b.vx = fx * nudge;
-    b.vy = fy * nudge;
-    b.owner = best;
-  } else if (sp <= 18 && dist < TOUCH_R) {
-    // Standing over it: damp so it settles at the feet rather than drifting.
-    b.vx *= 0.6;
-    b.vy *= 0.6;
+  // Tackle: an opponent closing to within TACKLE_R pokes the ball loose, away
+  // along their movement direction, so it becomes a 50/50 both can chase.
+  for (const o of state.players) {
+    if (o.team === best.team || o.state === 'fallen') continue;
+    if (Math.hypot(o.x - best.x, o.y - best.y) < TACKLE_R) {
+      const [ox, oy] = DIR_VEC[o.dir];
+      b.vx = ox * 150;
+      b.vy = oy * 150;
+      b.controlLock = 0.25; // brief no-control so it squirts free
+      b.owner = o;
+      state.carrier = null;
+      return;
+    }
+  }
+
+  // Dribble: hold the ball a short lead ahead of the feet (spring), carried at
+  // the player's velocity. Sticky but a kick (controlLock) or tackle frees it.
+  const [fx, fy] = DIR_VEC[best.dir];
+  const leadX = best.x + fx * DRIBBLE_LEAD;
+  const leadY = best.y + fy * DRIBBLE_LEAD;
+  b.vx = best.vx + (leadX - b.x) * DRIBBLE_SPRING;
+  b.vy = best.vy + (leadY - b.y) * DRIBBLE_SPRING;
+  b.owner = best;
+  void dt;
+}
+
+// Slide tackles knock down opponents they slide into: the opponent falls
+// (locked), and a carrier loses the ball.
+export function resolveSlideTackles(state: GameState): void {
+  for (const s of state.players) {
+    if (s.state !== 'slide') continue;
+    for (const o of state.players) {
+      if (o.team === s.team || o === s || o.state === 'fallen') continue;
+      if (Math.hypot(o.x - s.x, o.y - s.y) < 9) {
+        o.state = 'fallen';
+        o.stateTimer = FALLEN_LOCK;
+        o.vx = 0;
+        o.vy = 0;
+        if (state.carrier === o) {
+          state.carrier = null;
+          state.ball.controlLock = 0.2;
+        }
+      }
+    }
   }
 }
 

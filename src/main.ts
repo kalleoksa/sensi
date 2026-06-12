@@ -7,7 +7,7 @@ import { initInput, consumeInput } from './input';
 import { bakePitch } from './sprites/pitch_gen';
 import { makeRenderer } from './render';
 import { makeBall, stepBall } from './ball';
-import { controlHuman, resolvePossession } from './player';
+import { controlHuman, resolvePossession, resolveSlideTackles } from './player';
 import { buildAtlas, spriteFor } from './sprites/player_gen';
 import { makeMatch, updateMatch, resetKickoff } from './match';
 import { makeTeams } from './team';
@@ -93,6 +93,7 @@ function step(dt: number): void {
     state.controlled = pickControlled(state);
     controlHuman(state, state.controlled, input, dt);
     updateTeamAi(state, dt);
+    resolveSlideTackles(state);
     resolvePossession(state, dt);
   }
   stepBall(state.ball, dt);
