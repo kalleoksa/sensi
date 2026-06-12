@@ -188,18 +188,68 @@ function kickLeg(fdx: number, fdy: number, socks: RGB, skin: RGB): Px[] {
   return px;
 }
 
-// --- Slide (body pitched forward, leg extended) ----------------------------
-function slidePose(frame: number, fdx: number, fdy: number, socks: RGB, skin: RGB): Px[] {
+// --- Slide tackle ----------------------------------------------------------
+// A low, stretched figure laid along the slide direction: head/shoulders
+// trailing, leading leg thrust toward `facing`, one arm flung up. Built as a
+// full-body sprite (not the upright torso) so it reads like the reference.
+const FACING_VEC: Record<Facing, [number, number]> = {
+  U: [0, -1],
+  UR: [0.7, -0.7],
+  R: [1, 0],
+  DR: [0.7, 0.7],
+  D: [0, 1],
+};
+
+function slideSprite(f: Facing, frame: number, col: PlayerColors): Px[] {
+  const [fx, fy] = FACING_VEC[f];
   const px: Px[] = [];
-  const add = (x: number, y: number, c: RGB) => px.push({ x, y, c });
-  const reach = frame === 0 ? 2 : 3;
-  const ex = 4 + Math.round(fdx * reach);
-  const ey = 10 + Math.round(fdy * reach * 0.4);
-  add(ex, ey, BLACK); // extended boot
-  add(ex, ey - 1, socks);
-  add(4, 9, skin);
-  add(1, 10, socks); // trailing leg tucked
-  add(1, 9, skin);
+  const add = (x: number, y: number, c: RGB) =>
+    px.push({ x: Math.round(x), y: Math.round(y), c });
+
+  // Perpendicular to the slide axis, chosen to point "up" the screen (the
+  // raised arm / the body tilt), defaulting left when the axis is horizontal.
+  let pxn = -fy;
+  let pyn = fx;
+  if (pyn > 0) {
+    pxn = fy;
+    pyn = -fx;
+  }
+
+  const reach = frame === 0 ? 2.4 : 3.4; // leg extends further in frame 1
+  const cx = 2.2;
+  const cy = 7.4; // lowered center of mass
+
+  const at = (t: number) => [cx + fx * t, cy + fy * t] as const;
+  const seg = (t: number, c: RGB) => {
+    const [x, y] = at(t);
+    add(x, y, c);
+  };
+  // ...and a widened segment (adds a pixel on the perpendicular for bulk).
+  const wseg = (t: number, c: RGB) => {
+    const [x, y] = at(t);
+    add(x, y, c);
+    add(x + pxn, y + pyn, c);
+  };
+
+  // Head (trailing end) + face highlight just ahead of it.
+  seg(-2.2, col.hair);
+  wseg(-1.8, col.hair);
+  seg(-1.3, col.skin);
+  add(cx + fx * -1.1 + pxn * 0.4, cy + fy * -1.1 + pyn * 0.4, FACE_HI);
+  // Torso.
+  wseg(-0.7, col.shirt);
+  wseg(-0.2, col.shirt);
+  wseg(0.4, col.shirt);
+  // Shorts + leading leg + boot.
+  seg(1.0, col.shorts);
+  seg(1.6, col.socks);
+  seg(reach - 0.6, col.socks);
+  seg(reach, BLACK);
+  // Trailing boot (other leg), kicked back and toward the ground side.
+  add(cx + fx * 0.4 - pxn * 1.3, cy + fy * 0.4 - pyn * 1.3 + 1, BLACK);
+  // Raised arm: shoulder then hand, flung along the up-perpendicular.
+  add(cx + fx * -0.6 + pxn, cy + fy * -0.6 + pyn, col.skin);
+  add(cx + fx * -0.2 + pxn * 2, cy + fy * -0.2 + pyn * 2, col.skin);
   return px;
 }
 
@@ -231,14 +281,16 @@ function buildCell(
       armR = 4;
     }
   }
+  // Slide is a full-body pose of its own, not the upright torso + legs.
+  if (state === 'slide') {
+    return slideSprite(f, frame, col);
+  }
   const px: Px[] = [
     ...head(f, col.hair, col.skin),
     ...torso(f, col.shirt, col.shorts, col.skin, armL, armR),
   ];
   if (state === 'kick') {
     px.push(...kickLeg(fdx, fdy, col.socks, col.skin));
-  } else if (state === 'slide') {
-    px.push(...slidePose(frame, fdx, fdy, col.socks, col.skin));
   } else if (state === 'run') {
     px.push(...legs(poseForRunFrame(frame), col.shorts, col.socks, col.skin, fdx));
   } else {
