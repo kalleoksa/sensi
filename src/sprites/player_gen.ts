@@ -60,35 +60,41 @@ function head(f: Facing, hair: RGB, skin: RGB): Px[] {
   const S = skin;
   const px: Px[] = [];
   const add = (x: number, y: number, c: RGB) => px.push({ x, y, c });
-  // Common hair cap.
+  // Rounded crown (narrow top row) sitting tight on the shoulders — no flat
+  // top-hat brim. Rows: 0 crown, 1-2 hair, 3 face sliver.
+  add(2, 0, H);
+  add(3, 0, H);
   for (let x = 1; x <= 4; x++) {
-    add(x, 0, H);
     add(x, 1, H);
+    add(x, 2, H);
   }
-  add(0, 2, H);
-  add(5, 2, H);
-  for (let x = 1; x <= 4; x++) add(x, 2, H);
 
   switch (f) {
     case 'D':
-      for (let x = 1; x <= 4; x++) add(x, 3, S); // full face
+      add(1, 2, H); // keep sideburns, face below
+      add(4, 2, H);
+      add(2, 3, S);
+      add(3, 3, S); // small face sliver
+      add(1, 3, H);
+      add(4, 3, H);
       break;
     case 'DR':
-      for (let x = 1; x <= 4; x++) add(x, 3, S);
-      add(5, 2, S); // cheek toward facing side
+      add(2, 3, S);
+      add(3, 3, S);
+      add(4, 3, S); // face turned slightly to facing side
+      add(1, 3, H);
       break;
     case 'R':
+      add(3, 2, S); // cheek
       add(4, 2, S);
-      add(5, 2, S); // ear/cheek
       add(3, 3, S);
       add(4, 3, S); // narrow profile face
-      break;
-    case 'UR':
-      add(5, 2, S); // sliver of cheek
-      add(3, 3, H);
-      add(4, 3, H); // mostly back of head
       add(1, 3, H);
       add(2, 3, H);
+      break;
+    case 'UR':
+      add(4, 2, S); // sliver of cheek toward facing
+      for (let x = 1; x <= 4; x++) add(x, 3, H); // mostly back of head
       break;
     case 'U':
       for (let x = 1; x <= 4; x++) add(x, 3, H); // back of head, no face

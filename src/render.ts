@@ -103,8 +103,9 @@ export function makeRenderer(
       const bx = lerp(b.prevX, b.x, alpha);
       const by = lerp(b.prevY, b.y, alpha);
       const bz = lerp(b.prevZ, b.z, alpha);
-      const ssx = Math.round(bx - cam.x + 1.4 * bz);
-      const ssy = Math.round(by - cam.y + 0.5 * bz);
+      // Ball shadow sits down-right (sun upper-left); rises away when airborne.
+      const ssx = Math.round(bx - cam.x + 1 + 1.4 * bz);
+      const ssy = Math.round(by - cam.y + 1 + 0.5 * bz);
       checkerShadow(ctx, ssx - 1, ssy, 3, 2);
     }
 
@@ -122,13 +123,16 @@ export function makeRenderer(
         const bz = lerp(b.prevZ, b.z, alpha);
         const px = Math.round(bx - cam.x) - 1;
         const py = Math.round(by - cam.y - bz) - 1;
-        // 3x3 ball: white body, shaded underside, bright top-left highlight.
+        // 3x3 ball with trimmed corners (round read): white body, shaded
+        // underside, bright top highlight.
         ctx.fillStyle = css(WHITE);
-        ctx.fillRect(px, py, 3, 3);
+        ctx.fillRect(px + 1, py, 1, 1); // top
+        ctx.fillRect(px, py + 1, 3, 1); // middle row
+        ctx.fillRect(px + 1, py + 2, 1, 1); // bottom
         ctx.fillStyle = 'rgb(150,152,146)';
-        ctx.fillRect(px, py + 2, 3, 1);
+        ctx.fillRect(px + 1, py + 2, 1, 1); // shaded underside
         ctx.fillStyle = 'rgb(255,255,250)';
-        ctx.fillRect(px, py, 1, 1);
+        ctx.fillRect(px + 1, py, 1, 1); // highlight
       },
     });
     items.sort((a, c) => a.y - c.y);

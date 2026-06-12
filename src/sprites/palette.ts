@@ -3,9 +3,11 @@
 
 export type RGB = readonly [number, number, number];
 
+// Very low contrast to match the reference: the diamonds are barely there and
+// the per-pixel mottle reads as fine noise rather than coarse speckle.
 export const GRASS_L: RGB = [151, 176, 33]; // light diamond band
-export const GRASS_D: RGB = [143, 170, 25]; // dark band (keep contrast subtle)
-export const GRASS_DD: RGB = [134, 162, 20]; // mottle noise
+export const GRASS_D: RGB = [148, 172, 30]; // dark band (delta ~3-4)
+export const GRASS_DD: RGB = [144, 168, 27]; // mottle noise
 export const LINE: RGB = [236, 240, 226];
 export const POST: RGB = [234, 236, 215];
 export const CROSSBAR_UNDER: RGB = [170, 172, 162]; // shaded crossbar underside
