@@ -4,7 +4,7 @@
 import type { Ball } from './state';
 import { WORLD_W, WORLD_H } from './world';
 
-export const GRAVITY = 520; // px/s^2 on vz
+export const GRAVITY = 360; // px/s^2 on vz (lighter = balls hang longer)
 export const BOUNCE = 0.6; // vertical restitution
 export const GROUND_FRICTION = 2.2; // per-second velocity decay while rolling
 export const AIR_DRAG = 0.15; // light horizontal drag in flight

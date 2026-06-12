@@ -10,7 +10,7 @@ import { css, SHADOW, WHITE } from './sprites/palette';
 
 // Where the feet sit inside a sprite cell (anchor for world placement).
 const FEET_X = 6;
-const FEET_Y = 14;
+const FEET_Y = 13;
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
@@ -70,10 +70,17 @@ function drawPlayer(
 function drawPlayerShadow(ctx: CanvasRenderingContext2D, p: Player, cam: Camera, alpha: number): void {
   const wx = lerp(p.prevX, p.x, alpha);
   const wy = lerp(p.prevY, p.y, alpha);
-  // Grounded: fixed small blob offset right of the feet. Airborne (z): project.
-  const sx = Math.round(wx - cam.x + 2 + 1.4 * p.z);
-  const sy = Math.round(wy - cam.y + 1 + 0.5 * p.z);
-  checkerShadow(ctx, sx - 2, sy, 5, 2);
+  if (p.z < 1) {
+    // Grounded: small blob hugging the feet, nudged 1px right (sun upper-left).
+    const sx = Math.round(wx - cam.x) + 1;
+    const sy = Math.round(wy - cam.y) - 1;
+    checkerShadow(ctx, sx - 2, sy, 5, 2);
+  } else {
+    // Airborne: project by height down-right.
+    const sx = Math.round(wx - cam.x + 1.4 * p.z);
+    const sy = Math.round(wy - cam.y + 0.5 * p.z);
+    checkerShadow(ctx, sx - 2, sy, 5, 2);
+  }
 }
 
 export function makeRenderer(
@@ -98,7 +105,7 @@ export function makeRenderer(
       const bz = lerp(b.prevZ, b.z, alpha);
       const ssx = Math.round(bx - cam.x + 1.4 * bz);
       const ssy = Math.round(by - cam.y + 0.5 * bz);
-      checkerShadow(ctx, ssx, ssy, 2, 2);
+      checkerShadow(ctx, ssx - 1, ssy, 3, 2);
     }
 
     // 3. Entities, y-sorted (feet/ground y), lifted by z.
@@ -113,12 +120,15 @@ export function makeRenderer(
         const bx = lerp(b.prevX, b.x, alpha);
         const by = lerp(b.prevY, b.y, alpha);
         const bz = lerp(b.prevZ, b.z, alpha);
-        const px = Math.round(bx - cam.x);
-        const py = Math.round(by - cam.y - bz);
+        const px = Math.round(bx - cam.x) - 1;
+        const py = Math.round(by - cam.y - bz) - 1;
+        // 3x3 ball: white body, shaded underside, bright top-left highlight.
         ctx.fillStyle = css(WHITE);
-        ctx.fillRect(px, py, 2, 2);
-        ctx.fillStyle = 'rgb(190,190,185)';
-        ctx.fillRect(px, py + 1, 1, 1);
+        ctx.fillRect(px, py, 3, 3);
+        ctx.fillStyle = 'rgb(150,152,146)';
+        ctx.fillRect(px, py + 2, 3, 1);
+        ctx.fillStyle = 'rgb(255,255,250)';
+        ctx.fillRect(px, py, 1, 1);
       },
     });
     items.sort((a, c) => a.y - c.y);
