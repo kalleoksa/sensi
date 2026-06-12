@@ -216,45 +216,48 @@ function slideSprite(f: Facing, frame: number, col: PlayerColors): Px[] {
     pyn = -fx;
   }
 
-  // Centered in the cell (render anchors the slide on the cell center). The
-  // pose: head trailing low, a compact body, and two legs kicked high up-and-
-  // forward into a spread V (one tipped with a boot, one with a bare foot) --
-  // the dominant feature of the reference slide. +p is the "up" side.
+  // Centered in the cell (render anchors the slide on the cell center).
+  // Canonical Sensi slide (sliding toward facing): one leg STRAIGHT and
+  // extended low along the ground (the tackling leg), the other leg BENT with
+  // the knee up, and the trailing arm raised UP. +p is the "up" side; +t is
+  // toward facing.
   const cx = 3.0;
-  const cy = 5.5;
-  const s = frame === 0 ? 0.85 : 1.0; // legs kick further out on frame 1
+  const cy = 6.0;
+  const s = frame === 0 ? 0.85 : 1.0; // limbs extend further on frame 1
   const put = (t: number, p: number, c: RGB) =>
     add(cx + fx * t + pxn * p, cy + fy * t + pyn * p, c);
-  const legPt = (t: number, p: number, c: RGB) => put(t * s, p * s, c);
+  const limb = (t: number, p: number, c: RGB) => put(t * s, p * s, c);
 
   // Head (trailing end), low and compact.
-  put(-3.4, 0.1, col.hair);
-  put(-3.4, 0.8, col.hair);
-  put(-2.8, 0.1, col.hair);
-  put(-2.8, 0.8, col.hair);
-  put(-2.7, -0.5, col.hair);
+  put(-2.9, 0.0, col.hair);
+  put(-2.9, 0.7, col.hair);
+  put(-2.4, 0.0, col.hair);
+  put(-2.4, 0.7, col.hair);
+  put(-2.3, -0.6, col.hair);
   // Face + bright eye.
-  put(-2.5, -0.4, col.skin);
-  put(-2.4, 0.4, WHITE);
+  put(-2.1, -0.5, col.skin);
+  put(-2.0, 0.3, WHITE);
   // Torso (shirt), compact 2px-wide block.
-  for (const t of [-1.9, -1.3, -0.7, -0.1]) {
-    put(t, -0.2, col.shirt);
-    put(t, 0.6, col.shirt);
+  for (const t of [-1.6, -1.0, -0.4, 0.2]) {
+    put(t, -0.1, col.shirt);
+    put(t, 0.7, col.shirt);
   }
   // Hip / shorts.
-  put(0.4, -0.2, col.shorts);
-  put(0.4, 0.6, col.shorts);
-  put(0.9, 0.2, col.shorts);
-  // Leg A: steep, kicked high, ending in a bare foot (the skin tip on ref).
-  legPt(1.1, 1.0, col.shorts);
-  legPt(1.7, 1.8, col.socks);
-  legPt(2.3, 2.6, col.socks);
-  legPt(2.8, 3.3, col.skin);
-  // Leg B: shallower, spread apart, ending in a boot.
-  legPt(1.3, 0.2, col.shorts);
-  legPt(2.0, 0.7, col.socks);
-  legPt(2.8, 1.1, col.socks);
-  legPt(3.5, 1.5, BLACK);
+  put(0.6, 0.0, col.shorts);
+  put(0.6, 0.7, col.shorts);
+  // Straight tackling leg: extended low along the ground, boot at the far end.
+  limb(1.3, 0.1, col.shorts);
+  limb(2.2, 0.2, col.socks);
+  limb(3.1, 0.3, col.socks);
+  limb(4.0, 0.4, BLACK);
+  // Bent leg: knee/shin up, short, boot up.
+  limb(1.2, 1.0, col.shorts);
+  limb(1.7, 1.8, col.socks);
+  limb(1.9, 2.6, BLACK);
+  // Raised arm: trailing shoulder up to a skin hand.
+  limb(-0.6, 1.0, col.shirt);
+  limb(-0.4, 1.9, col.shirt);
+  limb(-0.2, 2.7, col.skin);
   return px;
 }
 
