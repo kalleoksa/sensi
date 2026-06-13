@@ -37,7 +37,7 @@ export function dirFromVec(dx: number, dy: number): Dir8 {
   return oct as Dir8;
 }
 
-export type PlayerState = 'idle' | 'run' | 'kick' | 'header' | 'slide' | 'fallen';
+export type PlayerState = 'idle' | 'run' | 'kick' | 'header' | 'slide' | 'fallen' | 'gkdive';
 export type Role = 'gk' | 'def' | 'mid' | 'fwd';
 
 export interface Player {

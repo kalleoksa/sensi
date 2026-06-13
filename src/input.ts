@@ -39,6 +39,29 @@ const CHANNELS = [P1, P2];
 
 const held = new Set<string>();
 
+// Virtual channel written by the touch overlay (touch.ts). Folded into P1 in
+// consumeInputs so touch and keyboard coexist with no downstream changes.
+const touch = {
+  dx: 0,
+  dy: 0,
+  actionDown: false,
+  pressedEdge: false,
+  releasedEdge: false,
+};
+
+// Joystick: pass a vector (any magnitude; player.ts normalizes to a unit dir).
+export function setTouchVector(dx: number, dy: number): void {
+  touch.dx = dx;
+  touch.dy = dy;
+}
+
+// Action button: raise press/release edges on transitions, mirroring keys.
+export function setTouchAction(down: boolean): void {
+  if (down && !touch.actionDown) touch.pressedEdge = true;
+  if (!down && touch.actionDown) touch.releasedEdge = true;
+  touch.actionDown = down;
+}
+
 function watched(code: string): boolean {
   return CHANNELS.some(
     (c) =>
@@ -110,6 +133,16 @@ function mergeFrames(a: InputFrame, b: InputFrame): InputFrame {
 export function consumeInputs(twoPlayer: boolean): { p1: InputFrame; p2: InputFrame | null } {
   const f1 = frameOf(P1);
   const f2 = frameOf(P2);
-  if (twoPlayer) return { p1: f1, p2: f2 };
-  return { p1: mergeFrames(f1, f2), p2: null };
+  const ft: InputFrame = {
+    dx: touch.dx,
+    dy: touch.dy,
+    down: touch.actionDown,
+    pressed: touch.pressedEdge,
+    released: touch.releasedEdge,
+  };
+  touch.pressedEdge = false;
+  touch.releasedEdge = false;
+  // Touch always drives P1; in two-player mode P2 stays keyboard-only.
+  if (twoPlayer) return { p1: mergeFrames(f1, ft), p2: f2 };
+  return { p1: mergeFrames(mergeFrames(f1, f2), ft), p2: null };
 }
