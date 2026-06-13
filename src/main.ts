@@ -74,13 +74,15 @@ function pickControlled(s: GameState, team: 0 | 1, current: Player | null): Play
 // Center the camera on the ball at kickoff.
 updateCamera(state.camera, state.ball.x, state.ball.y, 0, 0, 1);
 
-// R resets to kickoff (keeps score); "2" toggles two-player mode.
+// R resets to kickoff (keeps score); "2" toggles two-player; P/Esc pauses.
+let paused = false;
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyR') resetKickoff(state);
   if (e.code === 'Digit2') {
     twoPlayer = !twoPlayer;
     state.controlled2 = null;
   }
+  if (e.code === 'KeyP' || e.code === 'Escape') paused = !paused;
 });
 (window as unknown as { __game: GameState }).__game = state;
 (window as unknown as { __match: unknown }).__match = match;
@@ -92,6 +94,7 @@ window.addEventListener('keydown', (e) => {
 };
 
 function step(dt: number): void {
+  if (paused) return; // freeze the sim; render still draws the overlay
   const input = consumeInputs(twoPlayer);
   // Freeze player control during the post-goal pause, but keep the ball rolling
   // so it travels into the net during the goal celebration.
@@ -113,4 +116,4 @@ function step(dt: number): void {
   updateCamera(state.camera, state.ball.x, state.ball.y, state.ball.vx, state.ball.vy, dt);
 }
 
-startLoop(step, (alpha) => render(state, alpha, match));
+startLoop(step, (alpha) => render(state, alpha, match, paused));

@@ -17,7 +17,7 @@ function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
-// 3x5 pixel digit font (rows top->bottom), for the score HUD.
+// 3x5 pixel font (rows top->bottom), for the score HUD and overlays.
 const DIGITS: Record<string, string[]> = {
   '0': ['111', '101', '101', '101', '111'],
   '1': ['010', '110', '010', '010', '111'],
@@ -30,6 +30,12 @@ const DIGITS: Record<string, string[]> = {
   '8': ['111', '101', '111', '101', '111'],
   '9': ['111', '101', '111', '001', '111'],
   '-': ['000', '000', '111', '000', '000'],
+  A: ['010', '101', '111', '101', '101'],
+  D: ['110', '101', '101', '101', '110'],
+  E: ['111', '100', '111', '100', '111'],
+  P: ['111', '101', '111', '100', '100'],
+  S: ['111', '100', '111', '001', '111'],
+  U: ['101', '101', '101', '101', '111'],
 };
 
 function drawText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string): void {
@@ -109,8 +115,8 @@ function drawPlayerShadow(ctx: CanvasRenderingContext2D, p: Player, cam: Camera,
 export function makeRenderer(
   ctx: CanvasRenderingContext2D,
   baked: BakedPitch,
-): (state: GameState, alpha: number, match: Match) => void {
-  return (state, alpha, match) => {
+): (state: GameState, alpha: number, match: Match, paused: boolean) => void {
+  return (state, alpha, match, paused) => {
     const cam = state.camera;
 
     ctx.imageSmoothingEnabled = false;
@@ -211,5 +217,14 @@ export function makeRenderer(
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillRect(tx - 2, ty - 2, tw + 4, 9);
     drawText(ctx, scoreText, tx, ty, match.flash > 0 ? 'rgb(250,230,90)' : 'rgb(236,240,226)');
+
+    // 7. Pause overlay: dim the pitch and center "PAUSED".
+    if (paused) {
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      const word = 'PAUSED';
+      const ww = word.length * 4 - 1;
+      drawText(ctx, word, Math.round((VIEW_W - ww) / 2), Math.round(VIEW_H / 2 - 2), 'rgb(245,245,235)');
+    }
   };
 }
