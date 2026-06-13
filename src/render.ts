@@ -71,12 +71,13 @@ function drawPlayer(
     socks: p.kitSocks,
     hair: p.hair,
   });
-  const frame = p.state === 'run' ? runFrame(p.distance) : 0;
+  const frame =
+    p.state === 'run' ? runFrame(p.distance) : p.state === 'gkdive' ? (p.vz > 0 ? 0 : 1) : 0;
   const { canvas, flip } = spriteFor(atlas, p.state, p.dir, frame);
 
-  // Slide and fallen are laid-flat full-body poses centered in the cell, so
-  // anchor the cell center on the ground point; others anchor at the feet.
-  const laidFlat = p.state === 'slide' || p.state === 'fallen';
+  // Slide, fallen and the GK dive are laid-flat full-body poses centered in the
+  // cell, so anchor the cell center on the ground point; others anchor at feet.
+  const laidFlat = p.state === 'slide' || p.state === 'fallen' || p.state === 'gkdive';
   const anchorX = laidFlat ? CELL_W / 2 : FEET_X;
   const anchorY = laidFlat ? CELL_H / 2 : FEET_Y;
   const dx = sx - anchorX;

@@ -38,6 +38,15 @@ your window with nearest-neighbour filtering for crisp pixels.
 The action button auto-controls the player on your team nearest the ball; a
 chevron marks who you're driving.
 
+### Touch (mobile)
+
+On phones and tablets an on-screen overlay appears automatically: a **floating
+joystick** (left thumb — touch anywhere on the lower-left to summon it) and a
+single **action button** (right thumb) carrying the same tap / hold / release
+semantics as Space, including post-kick aftertouch via the joystick. Pause and
+reset buttons sit in the top corners. Append `?touch=1` to the URL to force the
+overlay on a desktop browser. Two-player is keyboard-only.
+
 ## What's in it
 
 - Fixed-timestep 60 Hz simulation with interpolated rendering; deterministic,

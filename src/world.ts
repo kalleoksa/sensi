@@ -1,12 +1,25 @@
 // Pitch dimensions, world<->screen transform, and the ball-following camera.
 // World units == game pixels. The pitch plays vertically (goals top & bottom).
 
-export const VIEW_W = 320;
-export const VIEW_H = 280;
+// The camera window, in game pixels. Mutable so mobile can widen/heighten it to
+// match the device aspect (see setViewport); importers read the live binding.
+export let VIEW_W = 320;
+export let VIEW_H = 280;
+
+// Resize the camera window. The pitch is baked at world size and blitted at the
+// camera offset, so a larger view simply reveals more of it — no other changes.
+export function setViewport(w: number, h: number): void {
+  VIEW_W = w;
+  VIEW_H = h;
+}
 
 // Playing field (touchline to touchline, goal line to goal line).
+// FIFA standard pitch is 105 m x 68 m (1.544:1). Keep the width and derive the
+// length from that ratio: 256 * 105/68 ≈ 396. (The marking depths below are
+// absolute real-world sizes, e.g. the 16.5 m penalty box, and read correctly
+// against this length.)
 export const PLAY_W = 256;
-export const PLAY_H = 720; // ~2.6 view heights tall
+export const PLAY_H = 396;
 export const BORDER = 48; // run-off / crowd margin around the field
 
 export const WORLD_W = PLAY_W + BORDER * 2; // 352
