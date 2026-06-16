@@ -30,11 +30,18 @@ const DIGITS: Record<string, string[]> = {
   '8': ['111', '101', '111', '101', '111'],
   '9': ['111', '101', '111', '001', '111'],
   '-': ['000', '000', '111', '000', '000'],
+  ':': ['000', '010', '000', '010', '000'],
   A: ['010', '101', '111', '101', '101'],
   D: ['110', '101', '101', '101', '110'],
   E: ['111', '100', '111', '100', '111'],
+  F: ['111', '100', '111', '100', '100'],
+  H: ['101', '101', '111', '101', '101'],
+  I: ['111', '010', '010', '010', '111'],
+  L: ['100', '100', '100', '100', '111'],
+  M: ['101', '111', '111', '101', '101'],
   P: ['111', '101', '111', '100', '100'],
   S: ['111', '100', '111', '001', '111'],
+  T: ['111', '010', '010', '010', '010'],
   U: ['101', '101', '101', '101', '111'],
 };
 
@@ -218,13 +225,26 @@ export function makeRenderer(
     ctx.fillRect(tx - 2, ty - 2, tw + 4, 9);
     drawText(ctx, scoreText, tx, ty, match.flash > 0 ? 'rgb(250,230,90)' : 'rgb(236,240,226)');
 
-    // 7. Pause overlay: dim the pitch and center "PAUSED".
-    if (paused) {
+    // 6b. Match clock, just right of the score: m:ss of the time remaining.
+    const secs = Math.max(0, Math.ceil(match.clock));
+    const clockText = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+    const cw = clockText.length * 4 - 1;
+    const clx = tx + tw + 5;
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(clx - 2, ty - 2, cw + 4, 9);
+    drawText(ctx, clockText, clx, ty, 'rgb(236,240,226)');
+
+    // 7. Centered overlays (dim the pitch): kickoff/half/full-time and pause.
+    const overlay =
+      paused ? 'PAUSED'
+      : match.phase === 'halftime' ? 'HALF TIME'
+      : match.phase === 'fulltime' ? 'FULL TIME'
+      : null;
+    if (overlay) {
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-      const word = 'PAUSED';
-      const ww = word.length * 4 - 1;
-      drawText(ctx, word, Math.round((VIEW_W - ww) / 2), Math.round(VIEW_H / 2 - 2), 'rgb(245,245,235)');
+      const ww = overlay.length * 4 - 1;
+      drawText(ctx, overlay, Math.round((VIEW_W - ww) / 2), Math.round(VIEW_H / 2 - 2), 'rgb(245,245,235)');
     }
   };
 }

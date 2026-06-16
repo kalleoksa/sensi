@@ -56,7 +56,10 @@ export interface Player {
   team: 0 | 1;
   isHuman: boolean;
   role: Role;
-  homeX: number; // formation anchor in world coords
+  slotX: number; // formation slot, fraction across pitch width (0..1)
+  slotY: number; // formation slot, fraction of own-half depth (0..1)
+  attacksTop: boolean; // true => attacks the TOP goal this half (set per half)
+  homeX: number; // formation anchor in world coords (recomputed each half)
   homeY: number;
   // Transient control state (human).
   charging: boolean; // shot power building while action held

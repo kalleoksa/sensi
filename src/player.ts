@@ -67,6 +67,9 @@ export function makePlayer(init: PlayerInit): Player {
     team: init.team,
     isHuman: init.isHuman,
     role: init.role,
+    slotX: 0.5,
+    slotY: 0.5,
+    attacksTop: init.team === 0, // half-1 default; set per half by setupHalf
     homeX: init.x,
     homeY: init.y,
     charging: false,

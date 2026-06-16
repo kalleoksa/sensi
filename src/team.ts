@@ -59,18 +59,25 @@ const KITS: Record<0 | 1, Kit> = {
 // Keepers wear a distinct kit (green) so they read apart from outfielders.
 const GK_KIT: Kit = { shirt: [40, 150, 78], shorts: [28, 30, 28], socks: [28, 30, 28] };
 
-function homeFor(team: 0 | 1, slot: Slot): { x: number; y: number } {
-  const x = FIELD_L + slot.x * PLAY_W;
-  // Own goal line and into-field direction differ per team.
+// World-space formation home for a slot, given which goal the team attacks this
+// half. slotY is depth into the team's OWN half (0 = own goal line). A team that
+// attacks the top defends the bottom, so its own half is the bottom half.
+export function homeForSlot(
+  slotX: number,
+  slotY: number,
+  attacksTop: boolean,
+): { x: number; y: number } {
+  const x = FIELD_L + slotX * PLAY_W;
   const half = PLAY_H / 2;
-  const y = team === 0 ? FIELD_B - slot.y * half : FIELD_T + slot.y * half;
+  const y = attacksTop ? FIELD_B - slotY * half : FIELD_T + slotY * half;
   return { x, y };
 }
 
 function makeTeam(team: 0 | 1, rng: Rng): Player[] {
   return FORMATION.map((slot) => {
     const kit = slot.role === 'gk' ? GK_KIT : KITS[team];
-    const home = homeFor(team, slot);
+    // Half-1 placement: team 0 attacks the top, team 1 the bottom.
+    const home = homeForSlot(slot.x, slot.y, team === 0);
     const init: PlayerInit = {
       x: home.x,
       y: home.y,
@@ -83,6 +90,9 @@ function makeTeam(team: 0 | 1, rng: Rng): Player[] {
       hair: slot.role === 'gk' ? HAIR_DARK : rng.pick(HAIRS),
     };
     const p = makePlayer(init);
+    p.slotX = slot.x;
+    p.slotY = slot.y;
+    p.attacksTop = team === 0;
     p.homeX = home.x;
     p.homeY = home.y;
     return p;

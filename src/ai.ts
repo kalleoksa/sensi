@@ -23,12 +23,13 @@ function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
-// The goal line each team attacks / defends.
-function attackGoalY(team: 0 | 1): number {
-  return team === 0 ? FIELD_T : FIELD_B;
+// The goal line each player attacks / defends (depends on the current half via
+// the per-player attacksTop flag, set by setupHalf).
+function attackGoalY(p: Player): number {
+  return p.attacksTop ? FIELD_T : FIELD_B;
 }
-function ownGoalY(team: 0 | 1): number {
-  return team === 0 ? FIELD_B : FIELD_T;
+function ownGoalY(p: Player): number {
+  return p.attacksTop ? FIELD_B : FIELD_T;
 }
 
 function nearestOpponent(state: GameState, p: Player): { opp: Player | null; d: number } {
@@ -46,7 +47,7 @@ function nearestOpponent(state: GameState, p: Player): { opp: Player | null; d: 
 }
 
 function carrierAi(state: GameState, p: Player, dt: number): void {
-  const goalY = attackGoalY(p.team);
+  const goalY = attackGoalY(p);
   const dGoal = Math.hypot(CX - p.x, goalY - p.y);
 
   if (dGoal < SHOOT_RANGE) {
@@ -62,7 +63,7 @@ function carrierAi(state: GameState, p: Player, dt: number): void {
     let bestAdv = -Infinity;
     for (const m of state.players) {
       if (m.team !== p.team || m === p || m.role === 'gk') continue;
-      const advance = p.team === 0 ? p.y - m.y : m.y - p.y; // ahead of carrier
+      const advance = p.attacksTop ? p.y - m.y : m.y - p.y; // ahead of carrier
       const mark = nearestOpponent(state, m).d;
       if (advance > 8 && mark > 18 && advance > bestAdv) {
         bestAdv = advance;
@@ -85,11 +86,11 @@ function gkAi(state: GameState, p: Player, dt: number): void {
     kickToward(state, p, CX + (b.x < CX ? 40 : -40), MID_Y, 300, 90);
     return;
   }
-  const lineY = ownGoalY(p.team) + (p.team === 0 ? -7 : 7);
+  const lineY = ownGoalY(p) + (p.attacksTop ? -7 : 7);
   const tx = clamp(b.x, CX - GOAL_W / 2 + 4, CX + GOAL_W / 2 - 4);
   // Edge off the line toward the ball when it's close and central.
   const ballClose = Math.abs(b.y - lineY) < 80 && Math.abs(b.x - CX) < GOAL_W;
-  const ty = ballClose ? lineY + (p.team === 0 ? -10 : 10) : lineY;
+  const ty = ballClose ? lineY + (p.attacksTop ? -10 : 10) : lineY;
   moveToward(p, tx, ty, dt, AI_SPEED, 1);
 }
 

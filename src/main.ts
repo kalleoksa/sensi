@@ -9,7 +9,7 @@ import { makeRenderer } from './render';
 import { makeBall, stepBall } from './ball';
 import { controlHuman, resolvePossession, resolveSlideTackles } from './player';
 import { buildAtlas, spriteFor } from './sprites/player_gen';
-import { makeMatch, updateMatch, resetKickoff } from './match';
+import { makeMatch, updateMatch, startMatch } from './match';
 import { makeTeams } from './team';
 import { updateTeamAi } from './ai';
 import { makeRng } from './rng';
@@ -51,7 +51,7 @@ const state: GameState = {
 };
 const match = makeMatch();
 let twoPlayer = false; // toggled with "2": P2 = arrows + Enter, drives blue
-resetKickoff(state);
+startMatch(state, match);
 
 // Each human drives their team's player nearest the ball (carrier if their
 // team has it). A little stickiness avoids flicker when two are equidistant.
@@ -76,10 +76,10 @@ function pickControlled(s: GameState, team: 0 | 1, current: Player | null): Play
 // Center the camera on the ball at kickoff.
 updateCamera(state.camera, state.ball.x, state.ball.y, 0, 0, 1);
 
-// R resets to kickoff (keeps score); "2" toggles two-player; P/Esc pauses.
+// R restarts the match (0-0, first half); "2" toggles two-player; P/Esc pauses.
 let paused = false;
 window.addEventListener('keydown', (e) => {
-  if (e.code === 'KeyR') resetKickoff(state);
+  if (e.code === 'KeyR') startMatch(state, match);
   if (e.code === 'Digit2') {
     twoPlayer = !twoPlayer;
     state.controlled2 = null;

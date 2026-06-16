@@ -8,6 +8,7 @@
 import type { GameState, Player } from './state';
 import { kickToward } from './player';
 import { emitSfx } from './audio';
+import { homeForSlot } from './team';
 import {
   FIELD_T,
   FIELD_B,
@@ -23,6 +24,9 @@ import {
 const GOAL_HEIGHT = 16; // ball above this z sails over the bar
 const DEAD_TIME = 1.7; // celebration: ball rolls into the net, then kickoff
 const RESTART_LOCK = 99; // ball is dead until the taker delivers it
+const KICKOFF_READY = 1.0; // ready freeze before a kickoff is released to play
+const HALFTIME_PAUSE = 2.5; // HALF TIME overlay before the second-half kickoff
+const HALF_LENGTH = 90; // seconds per half (SWOS-style 3-minute default match)
 
 type RestartKind = 'throw' | 'goalkick' | 'corner';
 
@@ -33,17 +37,42 @@ interface Restart {
 
 export interface Match {
   score: [number, number]; // [team0, team1]
-  phase: 'play' | 'dead';
-  deadTimer: number;
+  // kickoff = ready freeze; dead = goal celebration / out-of-bounds restart;
+  // halftime / fulltime = end-of-half freezes (fulltime is terminal).
+  phase: 'kickoff' | 'play' | 'dead' | 'halftime' | 'fulltime';
+  deadTimer: number; // generic phase countdown (kickoff / dead / halftime)
   deadReset: boolean; // true => return to kickoff when the dead timer ends
   restart: Restart | null; // pending delivery executed when the pause ends
   flash: number; // seconds remaining on the GOAL flash (HUD)
+  half: 1 | 2;
+  clock: number; // seconds remaining in the current half (counts down)
+  halfLength: number;
+  kickoffTeam: 0 | 1; // who takes the pending / active kickoff
+  firstKickoffTeam: 0 | 1; // half-1 kicker; the other team kicks off half 2
 }
 
 const RESTART_DEAD = 0.8; // brief pause to set up a throw-in / goal kick / corner
 
 export function makeMatch(): Match {
-  return { score: [0, 0], phase: 'play', deadTimer: 0, deadReset: false, restart: null, flash: 0 };
+  return {
+    score: [0, 0],
+    phase: 'kickoff',
+    deadTimer: 0,
+    deadReset: false,
+    restart: null,
+    flash: 0,
+    half: 1,
+    clock: HALF_LENGTH,
+    halfLength: HALF_LENGTH,
+    kickoffTeam: 1, // team 1 ("away") kicks off the first half
+    firstKickoffTeam: 1,
+  };
+}
+
+// Whether a team attacks the TOP goal in a given half. Half 1: team 0 -> top,
+// team 1 -> bottom. Teams swap ends for half 2.
+function attacksTop(team: 0 | 1, half: 1 | 2): boolean {
+  return (team === 0) === (half === 1);
 }
 
 // Kickoff: ball at center, every player back on its formation home.
@@ -71,6 +100,61 @@ export function resetKickoff(state: GameState): void {
   }
   state.carrier = null;
   emitSfx('whistleKick');
+}
+
+// Line everyone up for a kickoff and freeze play for a short ready beat. The
+// kicking team's central forward stands on the centre spot; the taker is then
+// free to dribble/pass immediately once play resumes (SWOS has no second-touch
+// rule). Used at the start of each half and after every goal.
+export function beginKickoff(state: GameState, match: Match, kickoffTeam: 0 | 1): void {
+  resetKickoff(state);
+  // Pick the kicking team's outfielder nearest the centre spot (their centre
+  // forward) and stand them on the ball.
+  let taker: Player | null = null;
+  let bestD = Infinity;
+  for (const p of state.players) {
+    if (p.team !== kickoffTeam || p.role === 'gk') continue;
+    const d = Math.hypot(p.x - state.ball.x, p.y - state.ball.y);
+    if (d < bestD) {
+      bestD = d;
+      taker = p;
+    }
+  }
+  if (taker) {
+    // Just behind the ball, on their own side of the halfway line.
+    taker.x = state.ball.x;
+    taker.y = state.ball.y + (taker.attacksTop ? 5 : -5);
+    taker.prevX = taker.x;
+    taker.prevY = taker.y;
+  }
+  match.kickoffTeam = kickoffTeam;
+  match.phase = 'kickoff';
+  match.deadTimer = KICKOFF_READY;
+  match.deadReset = false;
+}
+
+// Configure a half: set each player's attacking direction and formation home for
+// this half (teams swap ends in half 2), reset the clock, then start the kickoff.
+export function setupHalf(state: GameState, match: Match, half: 1 | 2, kickoffTeam: 0 | 1): void {
+  match.half = half;
+  match.clock = match.halfLength;
+  for (const p of state.players) {
+    p.attacksTop = attacksTop(p.team, half);
+    const home = homeForSlot(p.slotX, p.slotY, p.attacksTop);
+    p.homeX = home.x;
+    p.homeY = home.y;
+  }
+  beginKickoff(state, match, kickoffTeam);
+}
+
+// Kick off a fresh match: 0-0, first half, team 1 takes the first kickoff.
+export function startMatch(state: GameState, match: Match): void {
+  match.score[0] = 0;
+  match.score[1] = 0;
+  match.flash = 0;
+  match.restart = null;
+  match.firstKickoffTeam = 1;
+  setupHalf(state, match, 1, match.firstKickoffTeam);
 }
 
 function lastTouchTeam(state: GameState): 0 | 1 {
@@ -185,6 +269,7 @@ function scoreGoal(_state: GameState, match: Match, scoringTeam: 0 | 1): void {
   match.deadTimer = DEAD_TIME;
   match.deadReset = true;
   match.flash = DEAD_TIME;
+  match.kickoffTeam = (1 - scoringTeam) as 0 | 1; // conceding team kicks off
   emitSfx('goal');
   // Don't reset yet — let the ball roll on into the net during the celebration.
   // resetKickoff happens when the dead timer elapses (see updateMatch).
@@ -193,12 +278,47 @@ function scoreGoal(_state: GameState, match: Match, scoringTeam: 0 | 1): void {
 export function updateMatch(state: GameState, match: Match, dt: number): void {
   if (match.flash > 0) match.flash = Math.max(0, match.flash - dt);
 
+  // Ready freeze before a kickoff: hold, then release control to play.
+  if (match.phase === 'kickoff') {
+    match.deadTimer -= dt;
+    if (match.deadTimer <= 0) match.phase = 'play';
+    return;
+  }
+
+  // Half-time freeze: show the overlay, then swap ends and kick off the 2nd half.
+  if (match.phase === 'halftime') {
+    match.deadTimer -= dt;
+    if (match.deadTimer <= 0) {
+      setupHalf(state, match, 2, (1 - match.firstKickoffTeam) as 0 | 1);
+    }
+    return;
+  }
+
+  if (match.phase === 'fulltime') return; // match over; R restarts (see main.ts)
+
   if (match.phase === 'dead') {
     match.deadTimer -= dt;
     if (match.deadTimer <= 0) {
-      if (match.deadReset) resetKickoff(state); // after a goal: back to center
-      deliverRestart(state, match); // throw it in / kick it out to play
-      match.phase = 'play';
+      if (match.deadReset) {
+        // After a goal: conceding team kicks off (its own ready freeze).
+        beginKickoff(state, match, match.kickoffTeam);
+      } else {
+        deliverRestart(state, match); // throw it in / kick it out to play
+        match.phase = 'play';
+      }
+    }
+    return;
+  }
+
+  // --- phase === 'play': run the clock; end the half / match at zero ---
+  match.clock -= dt;
+  if (match.clock <= 0) {
+    match.clock = 0;
+    if (match.half === 1) {
+      match.phase = 'halftime';
+      match.deadTimer = HALFTIME_PAUSE;
+    } else {
+      match.phase = 'fulltime';
     }
     return;
   }
@@ -207,19 +327,23 @@ export function updateMatch(state: GameState, match: Match, dt: number): void {
   const inGoalMouth = Math.abs(b.x - CX) < GOAL_W / 2;
   const inset = 3; // place restarts this far inside the line
 
+  // Which team attacks each goal this half (teams swap ends in half 2).
+  const topTeam: 0 | 1 = match.half === 1 ? 0 : 1;
+  const bottomTeam: 0 | 1 = (1 - topTeam) as 0 | 1;
+
   // --- Goal lines (top / bottom) ---
   if (b.y < FIELD_T || b.y > FIELD_B) {
     const top = b.y < FIELD_T;
     if (inGoalMouth && b.z < GOAL_HEIGHT) {
-      // Top goal is attacked by team 0, bottom by team 1.
-      scoreGoal(state, match, top ? 0 : 1);
+      // The team attacking this goal scores.
+      scoreGoal(state, match, top ? topTeam : bottomTeam);
       return;
     }
     // Out over the goal line, no goal: goal kick or corner by last touch.
     const lineY = top ? FIELD_T : FIELD_B;
     const dir = top ? 1 : -1; // into-field direction
-    const attackingTeam: 0 | 1 = top ? 0 : 1; // who attacks this line
-    const defendingTeam: 0 | 1 = top ? 1 : 0;
+    const attackingTeam: 0 | 1 = top ? topTeam : bottomTeam; // who attacks this line
+    const defendingTeam: 0 | 1 = (1 - attackingTeam) as 0 | 1;
     if (lastTouchTeam(state) === attackingTeam) {
       // Goal kick for the defenders: ball at the six-yard box.
       placeRestart(state, match, CX, lineY + dir * SIX_BOX_D, defendingTeam, 'goalkick');
