@@ -58,8 +58,13 @@ const lastPlayed: Partial<Record<SfxName, number>> = {};
 // Wire gesture + mute listeners. The context itself is created lazily on the
 // first user gesture (browsers block audio until then; this also unlocks iOS).
 export function initAudio(): void {
-  const stored = Number(localStorage.getItem(VOLUME_KEY));
-  if (stored >= 0 && stored <= 1) volume = stored;
+  // Guard against an absent key: Number(null) is 0, which would otherwise pass
+  // the 0..1 check and silence audio for every first-time visitor.
+  const storedRaw = localStorage.getItem(VOLUME_KEY);
+  if (storedRaw !== null) {
+    const stored = Number(storedRaw);
+    if (stored >= 0 && stored <= 1) volume = stored;
+  }
   muted = localStorage.getItem(MUTE_KEY) === '1';
 
   const unlock = (): void => {
