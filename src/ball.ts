@@ -3,6 +3,7 @@
 
 import type { Ball } from './state';
 import { WORLD_W, WORLD_H, FIELD_T, FIELD_B, CX, GOAL_W, GOAL_DEPTH } from './world';
+import { emitSfx } from './audio';
 
 export const GRAVITY = 360; // px/s^2 on vz (lighter = balls hang longer)
 export const BOUNCE = 0.6; // vertical restitution
@@ -74,8 +75,10 @@ export function stepBall(b: Ball, dt: number): void {
   if (b.z < 0) {
     b.z = 0;
     if (b.vz < 0) {
+      const impact = -b.vz; // downward speed at contact
       b.vz = -b.vz * BOUNCE;
       if (b.vz < 30) b.vz = 0; // settle
+      if (impact > 60) emitSfx('bounce', Math.min(1, impact / 300));
     }
   }
 

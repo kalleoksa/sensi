@@ -12,6 +12,7 @@ import {
 } from './state';
 import type { InputFrame } from './input';
 import { applyAftertouch } from './ball';
+import { emitSfx } from './audio';
 import { type RGB } from './sprites/palette';
 import { WORLD_W, WORLD_H } from './world';
 
@@ -103,6 +104,7 @@ function startSlide(p: Player): void {
   p.stateTimer = SLIDE_LOCK;
   p.vx = fx * SLIDE_SPEED;
   p.vy = fy * SLIDE_SPEED;
+  emitSfx('slide');
 }
 
 function strike(state: GameState, p: Player, charge: number): void {
@@ -131,6 +133,7 @@ function strike(state: GameState, p: Player, charge: number): void {
   b.owner = p;
   p.state = 'kick';
   p.stateTimer = KICK_LOCK;
+  emitSfx(tap ? 'pass' : 'shot', tap ? 0.8 : clamp(speed / SHOT_MAX, 0.6, 1));
 }
 
 // Resolve who controls the ball (proximity, ball near ground), keep it on the
@@ -161,6 +164,7 @@ export function resolvePossession(state: GameState, dt: number): void {
       b.vx = ox * 112;
       b.vy = oy * 112;
       b.controlLock = 0.25; // brief no-control so it squirts free
+      emitSfx('tackle', 0.6);
       b.owner = o;
       state.carrier = null;
       return;
@@ -188,6 +192,7 @@ export function resolveSlideTackles(state: GameState): void {
       if (Math.hypot(o.x - s.x, o.y - s.y) < 9) {
         o.state = 'fallen';
         o.stateTimer = FALLEN_LOCK;
+        emitSfx('tackle');
         o.vx = 0;
         o.vy = 0;
         if (state.carrier === o) {
@@ -338,4 +343,6 @@ export function kickToward(
   p.dir = dirFromVec(fx, fy);
   p.state = 'kick';
   p.stateTimer = KICK_LOCK;
+  // A hard strike reads as a shot/clearance; a gentle one as a pass.
+  emitSfx(speed > 260 ? 'shot' : 'pass', clamp(speed / SHOT_MAX, 0.5, 1));
 }

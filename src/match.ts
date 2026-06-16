@@ -7,6 +7,7 @@
 
 import type { GameState, Player } from './state';
 import { kickToward } from './player';
+import { emitSfx } from './audio';
 import {
   FIELD_T,
   FIELD_B,
@@ -69,6 +70,7 @@ export function resetKickoff(state: GameState): void {
     p.charging = false;
   }
   state.carrier = null;
+  emitSfx('whistleKick');
 }
 
 function lastTouchTeam(state: GameState): 0 | 1 {
@@ -136,6 +138,7 @@ function placeRestart(
   match.deadTimer = RESTART_DEAD;
   match.deadReset = false;
   match.restart = { kind, taker };
+  emitSfx('whistleOut');
 }
 
 // Execute the queued delivery: throw the ball in / kick it out to play.
@@ -182,6 +185,7 @@ function scoreGoal(_state: GameState, match: Match, scoringTeam: 0 | 1): void {
   match.deadTimer = DEAD_TIME;
   match.deadReset = true;
   match.flash = DEAD_TIME;
+  emitSfx('goal');
   // Don't reset yet — let the ball roll on into the net during the celebration.
   // resetKickoff happens when the dead timer elapses (see updateMatch).
 }

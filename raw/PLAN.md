@@ -7,7 +7,7 @@ Handoff doc for implementation. Art direction and core algorithms were prototype
 
 - v1: playable match slice. One human player (keyboard), local pitch, working ball physics,
   dribbling, pass/shot with aftertouch, basic AI opponents, goals + restarts.
-- Explicitly out of v1: online play, menus, leagues/cups, GK AI beyond basics, sound, referee.
+- Explicitly out of v1: online play, menus, leagues/cups, GK AI beyond basics, referee.
 - Legal: no original Sensible Soccer assets. All sprites are generated procedurally
   in our own style (specs below, derived from reference *metrics* only).
 
@@ -147,6 +147,31 @@ recolored canvas keyed by team. Hair/skin varied per player at generation time.
   - with ball, hold+release: shot with power
   - after any kick: aftertouch window
 - Buffer taps ~80ms so inputs during locked states aren't eaten.
+
+## Sound (`src/audio.ts`)
+
+Procedural — **no audio assets**, synthesized at runtime via Web Audio, mirroring the
+generate-at-boot, no-pipeline, legally-clean stance used for sprites and pitch.
+
+- **Graph**: one `AudioContext` → master `GainNode` (volume/mute) → `DynamicsCompressor`
+  (limiter so layered hits don't clip) → destination. A looped lowpassed-noise **crowd bed**
+  feeds the master separately.
+- **Autoplay gate**: the context is created lazily and `resume()`d on the first keydown/pointer
+  gesture (also unlocks iOS/Safari). `M` toggles mute; volume + mute persist to `localStorage`.
+- **Determinism**: the sim never plays sound — it only calls `emitSfx(name, gain)`, a cheap
+  array push. The loop calls `flushSfx()` once per rendered frame to realize the queue. Audio is
+  a one-way side-effect sink: it never reads back into game state or the seeded PRNG, so the
+  fixed-step sim stays deterministic. Per-sound min-intervals throttle repeats; the queue is
+  capped; events queued before the context unlocks are dropped.
+- **SFX** (all from oscillators + filtered noise + gain envelopes):
+  `pass`/`shot` (pitch-dropping sine pop + click, gain scaled by strike speed), `bounce`
+  (filtered tick, gain from impact `vz`), `slide` (downward-sweep noise scrape), `tackle`,
+  `whistleKick`/`whistleOut`/`whistleGoal` (square ~2.6kHz with an LFO pea-trill), and `goal`
+  (noise roar swell + 3 whistle blasts).
+- **Crowd**: `setCrowdIntensity(0..1)` each frame from ball-distance-to-goal, spiking on the goal
+  flash; smoothed onto the bed's gain.
+- **Emit sites**: `player.ts` (strike, kickToward, slide, loose-ball poke, knockdown),
+  `ball.ts` (ground bounce), `match.ts` (goal, kickoff, out-of-bounds restart).
 
 ## AI (v1 minimal)
 
