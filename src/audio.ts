@@ -50,6 +50,7 @@ let crowdTarget = 0;
 let noise: AudioBuffer | null = null; // shared white-noise source buffer
 let volume = 0.5;
 let muted = false;
+let badge: HTMLElement | null = null;
 const lastPlayed: Partial<Record<SfxName, number>> = {};
 
 // --- setup ------------------------------------------------------------------
@@ -64,13 +65,43 @@ export function initAudio(): void {
   const unlock = (): void => {
     ensureContext();
     if (ctx && ctx.state === 'suspended') void ctx.resume();
+    updateBadge();
   };
-  window.addEventListener('keydown', unlock);
-  window.addEventListener('pointerdown', unlock);
+  // Cover every gesture type browsers accept for unlocking audio.
+  for (const ev of ['keydown', 'pointerdown', 'touchstart']) {
+    window.addEventListener(ev, unlock);
+  }
 
   window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyM') setMuted(!muted);
   });
+
+  makeBadge();
+  updateBadge();
+}
+
+// A small on-screen indicator: makes the audio state observable — whether sound
+// still needs a gesture to start, and whether it's muted.
+function makeBadge(): void {
+  badge = document.createElement('div');
+  badge.style.cssText =
+    'position:fixed;left:8px;bottom:8px;z-index:10;font:12px/1.4 system-ui,sans-serif;' +
+    'color:#ECF0E2;background:rgba(0,0,0,0.55);padding:4px 8px;border-radius:4px;' +
+    'pointer-events:none;user-select:none;';
+  document.body.appendChild(badge);
+}
+
+function updateBadge(): void {
+  if (!badge) return;
+  if (!ctx || ctx.state !== 'running') {
+    badge.textContent = '🔇 click or press a key to enable sound';
+    badge.style.display = '';
+  } else if (muted) {
+    badge.textContent = '🔇 muted — press M';
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
+  }
 }
 
 function ensureContext(): AudioContext | null {
@@ -85,6 +116,7 @@ function ensureContext(): AudioContext | null {
   // A gentle limiter so layered hits don't clip.
   const comp = ctx.createDynamicsCompressor();
   master.connect(comp).connect(ctx.destination);
+  ctx.onstatechange = updateBadge;
 
   // Shared 1s white-noise buffer for clicks/scrapes/crowd.
   const len = Math.floor(ctx.sampleRate);
@@ -100,6 +132,7 @@ export function setMuted(m: boolean): void {
   muted = m;
   localStorage.setItem(MUTE_KEY, m ? '1' : '0');
   if (ctx && master) master.gain.setTargetAtTime(m ? 0 : volume, ctx.currentTime, 0.02);
+  updateBadge();
 }
 
 export function setVolume(v: number): void {
@@ -122,6 +155,8 @@ export function setCrowdIntensity(x: number): void {
 
 // Realize all queued sounds. Called once per rendered frame from the loop.
 export function flushSfx(): void {
+  // Best-effort resume in case a gesture happened but the context stuck suspended.
+  if (ctx && ctx.state === 'suspended') void ctx.resume();
   if (!ctx || ctx.state !== 'running' || !master) {
     queue.length = 0; // drop anything queued before audio is unlocked
     return;
