@@ -2,7 +2,7 @@
 // World units == game pixels. The pitch plays vertically (goals top & bottom).
 
 export const VIEW_W = 320;
-export const VIEW_H = 280;
+export const VIEW_H = 256; // PAL reference; a 12px player reads at ~1/21 of the view
 
 // Playing field (touchline to touchline, goal line to goal line).
 export const PLAY_W = 256;

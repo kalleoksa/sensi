@@ -166,6 +166,53 @@ Per-player state machine: `position` (formation anchor, shifts with ball) →
 7. Teams, AI, GK
 8. Second local player, kits via palette swap, crowd/boards decoration
 
+## Tuning constants
+
+Derived from sourced reference metrics (not clip-measured — pitch-crossing time is the one
+estimated calibration knob; everything else is anchored). World units == game pixels and the
+world→screen transform is 1:1. **Applied** (see commit): the values below are now live in `src/`.
+
+**Anchor**: players are 12px tall (Jon Hare, confirmed). `playerHeight = 12` world px. A real
+footballer ≈ 1.8m → ~6.7 px/m; cross-checked against SWOS penalty-spot-at-70px (11m → 6.4 px/m).
+Converge on **~6.5 px/m**.
+
+### Zoom / camera
+
+| quantity                  | target            | applied                    |
+|---------------------------|-------------------|----------------------------|
+| px/m                      | ~6.5              | `PLAY_H=720` / 105m → 6.9 ✓ |
+| pitch length (heights)    | ~57–60            | 720 / 12 = 60 ✓            |
+| view height               | **256** (PAL ref) | `VIEW_H = 256` ✓           |
+| view in player-heights    | ~19–21            | 256 / 12 = 21.3 ✓          |
+| player / viewport height  | ~5%               | 12 / 256 = 4.7% ✓          |
+
+- Targets the **320×256** PAL reference: a player reads at ~1/21 of viewport height.
+  (Stricter 1/19 anchor would be `VIEW_H = 228`; 256 chosen as the sourced reference and a
+  gentler change to judge first — revisit if still too wide.) `VIEW_W` stays 320.
+
+### Speed (the knob)
+
+Calibrate so a full goal-to-goal solo run takes ~10s — slow enough that passing beats dribbling.
+
+| constant        | was     | applied | note                                        |
+|-----------------|---------|---------|---------------------------------------------|
+| `PLAYER_SPEED`  | 96 px/s | **72**  | 720px / 10s = 72; = 1.2 px/tick @ 60Hz      |
+
+- To recalibrate from footage: `heights/sec = 57 / (measured crossing seconds)`, then
+  `per-tick = heights/sec × 12 / 60`.
+
+### The pass/run ratio — the "football pinball" feel
+
+A firm pass must travel **2–3× top run speed** (with enough ground friction to arrive
+receivable). If the fastest dribbler can outrun a pass, passing dies and you get solo-dribble
+football — the failure mode of the weak clones.
+
+- `PASS_SPEED = 188` was **1.96×** run speed (96) — just under the floor, too dribble-friendly.
+- The drop to 72 makes it **2.6×** with no change to `PASS_SPEED` — dead-center the band.
+  Slowing the player fixes zoom-perceived-speed *and* restores passing primacy at once.
+- Trimmed proportionally (×0.75) to preserve relative feel at the slower run speed:
+  `SLIDE_SPEED` 168 → **126** (still 1.75× run), and the loose-ball poke 150 → **112**.
+
 ## Reference files
 
 - `pitch_frame.py` — generates the approved still frame (palette, pitch texture, goal,

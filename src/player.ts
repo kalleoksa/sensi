@@ -15,8 +15,8 @@ import { applyAftertouch } from './ball';
 import { type RGB } from './sprites/palette';
 import { WORLD_W, WORLD_H } from './world';
 
-export const PLAYER_SPEED = 96; // px/s on the ground
-const SLIDE_SPEED = 168;
+export const PLAYER_SPEED = 72; // px/s; ~10s goal-to-goal over the 720px pitch
+const SLIDE_SPEED = 126; // 1.75x run speed, trimmed with PLAYER_SPEED
 const KICK_LOCK = 0.15;
 const SLIDE_LOCK = 0.4;
 export const FALLEN_LOCK = 0.6;
@@ -158,8 +158,8 @@ export function resolvePossession(state: GameState, dt: number): void {
     if (o.team === best.team || o.state === 'fallen') continue;
     if (Math.hypot(o.x - best.x, o.y - best.y) < TACKLE_R) {
       const [ox, oy] = DIR_VEC[o.dir];
-      b.vx = ox * 150;
-      b.vy = oy * 150;
+      b.vx = ox * 112;
+      b.vy = oy * 112;
       b.controlLock = 0.25; // brief no-control so it squirts free
       b.owner = o;
       state.carrier = null;
