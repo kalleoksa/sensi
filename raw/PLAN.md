@@ -170,7 +170,7 @@ Per-player state machine: `position` (formation anchor, shifts with ball) →
 
 Derived from sourced reference metrics (not clip-measured — pitch-crossing time is the one
 estimated calibration knob; everything else is anchored). World units == game pixels and the
-world→screen transform is currently 1:1, so each target below is a single-constant change.
+world→screen transform is 1:1. **Applied** (see commit): the values below are now live in `src/`.
 
 **Anchor**: players are 12px tall (Jon Hare, confirmed). `playerHeight = 12` world px. A real
 footballer ≈ 1.8m → ~6.7 px/m; cross-checked against SWOS penalty-spot-at-70px (11m → 6.4 px/m).
@@ -178,26 +178,25 @@ Converge on **~6.5 px/m**.
 
 ### Zoom / camera
 
-| quantity                  | target            | current build              |
+| quantity                  | target            | applied                    |
 |---------------------------|-------------------|----------------------------|
 | px/m                      | ~6.5              | `PLAY_H=720` / 105m → 6.9 ✓ |
 | pitch length (heights)    | ~57–60            | 720 / 12 = 60 ✓            |
-| view height               | **256** (PAL ref) | `VIEW_H = 280`             |
-| view in player-heights    | ~19–21            | 280 / 12 = 23.3            |
-| player / viewport height  | ~5%               | 12 / 280 = 4.3%            |
+| view height               | **256** (PAL ref) | `VIEW_H = 256` ✓           |
+| view in player-heights    | ~19–21            | 256 / 12 = 21.3 ✓          |
+| player / viewport height  | ~5%               | 12 / 256 = 4.7% ✓          |
 
-- Target the **320×256** PAL reference: a player should be ~1/19–1/20 of viewport height.
-  Current 280px view is zoomed out past that (player reads at 4.3%, want ~5%).
-- **Action**: `VIEW_H` 280 → **256**. (Stricter 1/19 anchor would be 228; 256 chosen as the
-  sourced reference and a gentler change to judge first.) `VIEW_W` stays 320.
+- Targets the **320×256** PAL reference: a player reads at ~1/21 of viewport height.
+  (Stricter 1/19 anchor would be `VIEW_H = 228`; 256 chosen as the sourced reference and a
+  gentler change to judge first — revisit if still too wide.) `VIEW_W` stays 320.
 
 ### Speed (the knob)
 
 Calibrate so a full goal-to-goal solo run takes ~10s — slow enough that passing beats dribbling.
 
-| constant        | current | target | note                                        |
-|-----------------|---------|--------|---------------------------------------------|
-| `PLAYER_SPEED`  | 96 px/s | **72** | 720px / 10s = 72; = 1.2 px/tick @ 60Hz      |
+| constant        | was     | applied | note                                        |
+|-----------------|---------|---------|---------------------------------------------|
+| `PLAYER_SPEED`  | 96 px/s | **72**  | 720px / 10s = 72; = 1.2 px/tick @ 60Hz      |
 
 - To recalibrate from footage: `heights/sec = 57 / (measured crossing seconds)`, then
   `per-tick = heights/sec × 12 / 60`.
@@ -208,11 +207,11 @@ A firm pass must travel **2–3× top run speed** (with enough ground friction t
 receivable). If the fastest dribbler can outrun a pass, passing dies and you get solo-dribble
 football — the failure mode of the weak clones.
 
-- `PASS_SPEED = 188` today is **1.96×** run speed (96) — just under the floor, too dribble-friendly.
-- Dropping run speed to 72 makes it **2.6×** with no change to `PASS_SPEED` — dead-center the band.
+- `PASS_SPEED = 188` was **1.96×** run speed (96) — just under the floor, too dribble-friendly.
+- The drop to 72 makes it **2.6×** with no change to `PASS_SPEED` — dead-center the band.
   Slowing the player fixes zoom-perceived-speed *and* restores passing primacy at once.
-- **Flag**: `SLIDE_SPEED = 168` shifts 1.75× → 2.33× run speed, and the dribble nudge (~150)
-  balloons similarly. Trim both proportionally so slides/loose touches don't become the new "too fast."
+- Trimmed proportionally (×0.75) to preserve relative feel at the slower run speed:
+  `SLIDE_SPEED` 168 → **126** (still 1.75× run), and the loose-ball poke 150 → **112**.
 
 ## Reference files
 
