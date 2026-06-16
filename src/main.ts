@@ -13,6 +13,7 @@ import { makeMatch, updateMatch, resetKickoff } from './match';
 import { makeTeams } from './team';
 import { updateTeamAi } from './ai';
 import { makeRng } from './rng';
+import { initAudio, flushSfx, setCrowdIntensity } from './audio';
 import { KIT_RED, WHITE, HAIR_DARK } from './sprites/palette';
 import type { GameState, Player } from './state';
 
@@ -33,6 +34,7 @@ window.addEventListener('resize', fitToWindow);
 fitToWindow();
 
 initInput();
+initAudio(); // unlocks on first gesture; "M" toggles mute
 const baked = bakePitch();
 const render = makeRenderer(ctx, baked);
 
@@ -116,4 +118,14 @@ function step(dt: number): void {
   updateCamera(state.camera, state.ball.x, state.ball.y, state.ball.vx, state.ball.vy, dt);
 }
 
-startLoop(step, (alpha) => render(state, alpha, match, paused));
+function frame(alpha: number): void {
+  // Crowd swells as the ball nears either goal; spikes during the goal flash.
+  const b = state.ball;
+  const distToGoal = Math.min(Math.abs(b.y - FIELD_T), Math.abs(b.y - FIELD_B));
+  const near = Math.max(0, 1 - distToGoal / 180);
+  setCrowdIntensity(Math.max(near, match.flash > 0 ? 1 : 0));
+  flushSfx(); // realize sounds the sim queued this frame
+  render(state, alpha, match, paused);
+}
+
+startLoop(step, frame);
