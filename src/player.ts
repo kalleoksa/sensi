@@ -67,6 +67,10 @@ export function makePlayer(init: PlayerInit): Player {
     team: init.team,
     isHuman: init.isHuman,
     role: init.role,
+    duty: 'hold',
+    markTarget: null,
+    supportX: init.x,
+    supportY: init.y,
     slotX: 0.5,
     slotY: 0.5,
     attacksTop: init.team === 0, // half-1 default; set per half by setupHalf

@@ -40,6 +40,18 @@ export function dirFromVec(dx: number, dy: number): Dir8 {
 export type PlayerState = 'idle' | 'run' | 'kick' | 'header' | 'slide' | 'fallen';
 export type Role = 'gk' | 'def' | 'mid' | 'fwd';
 
+// Per-tick AI duty, assigned by computeDuties() in ai.ts. Transient: recomputed
+// every step, never persisted across kickoffs. The duty seam is what lets the
+// behaviour set grow toward a fuller tactical model without touching callers.
+//   gk      keeper line/clearance logic
+//   carrier on the ball: dribble/pass/shoot
+//   press   closest defender, runs onto the ball / pressures the carrier
+//   cover   second defender, backs up the presser a step behind
+//   mark    picks up an opposing attacker, sits goal-side
+//   support off-ball attacker making a run to give the carrier an option
+//   hold    holds a compact formation point that tracks the ball + goal-side
+export type Duty = 'gk' | 'carrier' | 'press' | 'cover' | 'mark' | 'support' | 'hold';
+
 export interface Player {
   x: number;
   y: number;
@@ -56,6 +68,10 @@ export interface Player {
   team: 0 | 1;
   isHuman: boolean;
   role: Role;
+  duty: Duty; // transient AI duty for this tick (see Duty)
+  markTarget: Player | null; // opponent this player marks when duty === 'mark'
+  supportX: number; // best-support-spot target when duty === 'support'
+  supportY: number;
   slotX: number; // formation slot, fraction across pitch width (0..1)
   slotY: number; // formation slot, fraction of own-half depth (0..1)
   attacksTop: boolean; // true => attacks the TOP goal this half (set per half)
