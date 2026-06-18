@@ -20,7 +20,9 @@ import { FIELD_T, FIELD_B, FIELD_L, FIELD_R, PLAY_W, CX, GOAL_W } from './world'
 
 const AI_SPEED = PLAYER_SPEED * 0.94; // a touch slower than the human
 const SHOOT_RANGE = 130;
-const COMFORT_ZONE = 26; // opponent within this AND ahead => carrier feels threatened
+const FORWARD_PROGRESS_MIN = 25; // a safe forward pass gaining this much is worth taking
+const RELEASE_DIST = 16; // defender this close => about to tackle, release the ball now
+const BAIL_MAX_BACK = 25; // a bail-out pass may not go more than this far backwards
 const DRIBBLE_AVOID = 40; // defender within this => carrier veers around them
 const MAX_SUPPORT = 3; // off-ball attackers making forward runs at once
 
@@ -44,6 +46,7 @@ const SUPPORT_OPTIMAL_DIST = 70; // px from the carrier a supporter wants to be
 const SUPPORT_MIN_SEP = 44; // keep supporters from piling on one spot
 const SUPPORT_TRAVEL_W = 0.02; // mild bias: a supporter prefers nearer good spots
 
+const MAX_MARK = 2; // man-mark only this many of the most dangerous attackers
 const MARK_GAP = 12; // a marker sits this far goal-side of its man
 const COVER_GAP = 22; // the cover player sits this far behind the ball toward own goal
 const HOLD_DROP = 6; // extra goal-side bias on the holding block when defending
@@ -214,7 +217,11 @@ function assignMarks(state: GameState, team: 0 | 1): void {
   if (markers.length === 0) return;
   const goalY = ownGoalY(markers[0]);
   const opps = state.players.filter((p) => p.team !== team && p.role !== 'gk');
+  // Man-mark only the few most dangerous attackers (nearest our goal); the rest
+  // of the back line holds a zonal block. Glueing a man to every attacker
+  // smothers the game — leaving some attackers free is what lets play develop.
   opps.sort((a, c) => Math.abs(a.y - goalY) - Math.abs(c.y - goalY));
+  opps.length = Math.min(opps.length, MAX_MARK);
 
   const taken = new Set<Player>();
   for (const opp of opps) {
@@ -387,45 +394,60 @@ function bestPass(state: GameState, p: Player): PassOption | null {
   return best;
 }
 
-// Is an opponent close enough AND ahead (toward our goal) to threaten the
-// carrier? Buckland's "threatened" gate: only then does the carrier rush a pass.
-function threatened(state: GameState, p: Player): boolean {
-  const goalY = attackGoalY(p);
-  let gx = CX - p.x;
-  let gy = goalY - p.y;
-  const gl = Math.hypot(gx, gy) || 1;
-  gx /= gl;
-  gy /= gl;
-  for (const q of state.players) {
-    if (q.team === p.team) continue;
-    const ox = q.x - p.x;
-    const oy = q.y - p.y;
-    if (Math.hypot(ox, oy) >= COMFORT_ZONE) continue;
-    if (ox * gx + oy * gy > 0) return true; // within the zone and in front
+// A possession-retaining "release" pass for when a tackle is imminent: the
+// safest reachable teammate, preferring forward/open men and never bailing more
+// than BAIL_MAX_BACK backwards (so retaining the ball still keeps play going
+// forward rather than endlessly recycling toward our own goal).
+function safestPass(state: GameState, p: Player): Player | null {
+  let best: Player | null = null;
+  let bestScore = -Infinity;
+  for (const m of state.players) {
+    if (m.team !== p.team || m === p || m.role === 'gk') continue;
+    const advance = advanceOf(p, p.y, m.y);
+    if (advance < -BAIL_MAX_BACK) continue; // don't recycle deep backwards
+    const passDist = Math.hypot(m.x - p.x, m.y - p.y);
+    if (passDist < MIN_PASS_DIST) continue;
+    if (!isFinite(ballTravelTime(passDist, PASS_EVAL_SPEED))) continue;
+    if (!passSafe(state, p.x, p.y, m.x, m.y, p.team, PASS_EVAL_SPEED)) continue;
+    const open = nearestEnemyDist(state, m.x, m.y, p.team);
+    const score = advance + open * 0.5; // weight advancement so the outlet goes forward
+    if (score > bestScore) {
+      bestScore = score;
+      best = m;
+    }
   }
-  return false;
+  return best;
 }
 
 function carrierAi(state: GameState, p: Player, dt: number): void {
   const goalY = attackGoalY(p);
   const dGoal = Math.hypot(CX - p.x, goalY - p.y);
+  const fs = p.attacksTop ? -1 : 1;
 
-  // Shoot -> pass -> dribble priority.
+  // 1) Shoot if in range with a clear lane (beating the keeper).
   if (dGoal < SHOOT_RANGE && passSafe(state, p.x, p.y, CX, goalY, p.team, SHOT_EVAL_SPEED, true)) {
-    kickToward(state, p, CX, goalY, SHOT_EVAL_SPEED, 70); // shot with a little loft
+    kickToward(state, p, CX, goalY, SHOT_EVAL_SPEED, 70);
     return;
   }
 
-  const pass = bestPass(state, p);
-  // Pass when threatened, or when a safe ball gains real ground.
-  if (pass && (threatened(state, p) || pass.advance > 45)) {
-    const fs = p.attacksTop ? -1 : 1;
-    kickToward(state, p, pass.mate.x, pass.mate.y + fs * 8, PASS_EVAL_SPEED); // lead the run
+  // 2) Take a safe forward pass that makes real ground (commit forward).
+  const fwd = bestPass(state, p);
+  if (fwd && fwd.advance > FORWARD_PROGRESS_MIN) {
+    kickToward(state, p, fwd.mate.x, fwd.mate.y + fs * 8, PASS_EVAL_SPEED); // lead the run
     return;
   }
 
-  // Dribble toward goal, veering around a defender that's closing in.
+  // 3) About to be tackled: release to the best forward/lateral outlet.
   const { opp, d } = nearestOpponent(state, p);
+  if (d < RELEASE_DIST) {
+    const bail = safestPass(state, p) ?? fwd?.mate ?? null;
+    if (bail) {
+      kickToward(state, p, bail.x, bail.y, PASS_EVAL_SPEED);
+      return;
+    }
+  }
+
+  // 4) Otherwise dribble at goal, veering around a defender that's closing in.
   let tx = CX;
   const ty = goalY;
   if (opp && d < DRIBBLE_AVOID) {
@@ -475,8 +497,8 @@ function holdAi(state: GameState, p: Player, dt: number): void {
   const b = state.ball;
   // Role-weighted fraction of the way from THIS player's home toward the ball —
   // keeps the formation's shape while the team tracks play as a unit.
-  const w = p.role === 'fwd' ? 0.5 : p.role === 'mid' ? 0.35 : 0.2;
-  const tx = clamp(p.homeX + (b.x - p.homeX) * w * 0.8, FIELD_L + 4, FIELD_R - 4);
+  const w = p.role === 'fwd' ? 0.35 : p.role === 'mid' ? 0.28 : 0.18;
+  const tx = clamp(p.homeX + (b.x - p.homeX) * w * 0.6, FIELD_L + 4, FIELD_R - 4);
   let ty = p.homeY + (b.y - p.homeY) * w;
   const defending = state.carrier != null && state.carrier.team !== p.team;
   if (defending) {
