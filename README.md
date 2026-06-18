@@ -53,6 +53,37 @@ chevron marks who you're driving.
   the ball, a rowed crowd and ad boards, and an 8-direction player sprite atlas
   (idle / run / kick / slide / fallen) recoloured per team kit.
 
+## Sound
+
+Like the graphics, the audio uses **no asset files** — every sound effect is
+synthesized at runtime with the **Web Audio API** ([src/audio.ts](src/audio.ts)).
+
+- **One `AudioContext`, created lazily.** Browsers block audio until a user
+  gesture, so the context is built on the first `keydown` / `pointerdown` /
+  `touchstart` (this also unlocks iOS). A small bottom-left badge shows whether
+  sound still needs a gesture or is muted (toggle with **M**); volume and mute
+  persist to `localStorage`.
+- **Everything runs through a master gain → compressor → output.** The
+  compressor is a gentle limiter so layered hits don't clip. A shared 1-second
+  white-noise buffer feeds all the noise-based effects.
+- **Effects are built from a few primitives** shaped by gain envelopes:
+  - `thud` — a pitch-dropping sine "pop" plus a noise click → passes, shots,
+    tackles.
+  - `tick` — a short band/high-passed noise burst → ball bounces, contact.
+  - `scrape` — noise through a downward-sweeping lowpass → slide-tackle grass.
+  - `whistle` — a ~2.6 kHz square tone with a 28 Hz trill LFO (the pea rattle),
+    one or more blasts → kickoff / out / goal whistles.
+  - `roar` — a swelling lowpassed noise burst → goal celebration.
+- **A looped crowd bed** (heavily lowpassed white noise) murmurs underneath; its
+  level is driven by a smoothed `crowdIntensity` that rises near the goals and
+  spikes on a goal.
+
+The simulation never plays sound directly. It pushes events via `emitSfx()`
+(a cheap array push, deduped per-sound by a minimum interval), and the render
+loop calls `flushSfx()` once per frame to realize them. Audio is a pure
+side-effect sink — it never reads back into game state or the seeded PRNG, so
+the fixed-step sim stays fully deterministic whether or not sound is running.
+
 ## Project structure
 
 ```
@@ -66,6 +97,7 @@ src/
   team.ts          formations + team construction
   ai.ts            chase / position / carrier / goalkeeper behaviours
   match.ts         rules: goals, scoring, restarts, kickoff
+  audio.ts         procedural Web Audio SFX + crowd bed, event queue
   state.ts         shared entity/state types
   render.ts        draw order, sprites, shadows, HUD, overlays
   sprites/
