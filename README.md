@@ -38,6 +38,10 @@ your window with nearest-neighbour filtering for crisp pixels.
 The action button auto-controls the player on your team nearest the ball; a
 chevron marks who you're driving.
 
+On phones and tablets an on-screen pad appears automatically: a left thumb-stick
+to move (8-way, like WASD) and a right **KICK** button (tap = pass, hold = shot,
+no-ball = slide). The pad is hidden on mouse/keyboard devices.
+
 ## What's in it
 
 - Fixed-timestep 60 Hz simulation with interpolated rendering; deterministic,
@@ -90,7 +94,7 @@ the fixed-step sim stays fully deterministic whether or not sound is running.
 src/
   main.ts          boot, canvas, integer-scale resize, the game loop wiring
   loop.ts          fixed-timestep accumulator
-  input.ts         keyboard (two channels), tap/hold edges
+  input.ts         keyboard (two channels) + touch pad, tap/hold edges
   world.ts         pitch dimensions, camera, world<->screen
   ball.ts          ball state + physics, aftertouch, net containment
   player.ts        player state machine, dribble/kick, AI movement helpers
