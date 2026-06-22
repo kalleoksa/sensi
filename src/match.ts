@@ -319,6 +319,7 @@ export function updateMatch(state: GameState, match: Match, dt: number): void {
       match.deadTimer = HALFTIME_PAUSE;
     } else {
       match.phase = 'fulltime';
+      emitSfx('whistleGoal'); // long full-time whistle (three blasts)
     }
     return;
   }

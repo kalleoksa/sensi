@@ -16,7 +16,7 @@ import {
   type Session,
   type ControlMode,
 } from './session';
-import { CONTINENTS, teamsIn, type TeamDef, type Kit } from './teams/data';
+import { CONTINENTS, TEAMS, teamsIn, type TeamDef, type Kit } from './teams/data';
 import {
   FORMATION_IDS,
   FORMATION_NAMES,
@@ -28,7 +28,18 @@ import {
 import { MATCH_LENGTHS, PITCHES, DEFAULT_OPTIONS, type MatchOptions } from './options';
 import { css } from './sprites/palette';
 
-type AppScreen = 'title' | 'mainMenu' | 'friendlySetup' | 'teamSelect' | 'preMatch' | 'options' | 'match';
+type AppScreen =
+  | 'title'
+  | 'mainMenu'
+  | 'friendlySetup'
+  | 'teamSelect'
+  | 'preMatch'
+  | 'options'
+  | 'match'
+  | 'postMatch';
+
+const POSTMATCH_ITEMS = ['PLAY AGAIN', 'MAIN MENU'];
+const FULLTIME_HOLD = 3; // seconds the FULL TIME overlay holds before the result screen
 
 const MAIN_ITEMS = ['FRIENDLY', 'CUP', 'LEAGUE', 'SPECIALS', 'OPTIONS', 'EDIT TEAMS'];
 const MAIN_ENABLED = [true, false, false, false, true, false];
@@ -106,6 +117,19 @@ export function makeApp(deps: AppDeps): App {
     list: makeList([...CONTINENTS]),
   };
   const pm: PreMatchState = { queue: [], index: 0, formIdx: 0 };
+  const postMatch = makeList(POSTMATCH_ITEMS);
+  let fullTimeTimer = 0; // counts the FULL TIME hold before the result screen
+
+  // Dev handles for inspection/testing (mirrors the old __game/__match hooks):
+  // __sensi() returns the live session; __sensiQuickMatch() jumps straight into
+  // a CPU-v-CPU match, bypassing the menus.
+  (window as unknown as { __sensi?: () => Session | null }).__sensi = () => session;
+  (window as unknown as { __sensiQuickMatch?: () => void }).__sensiQuickMatch = () => {
+    ts.home = TEAMS[0];
+    awayTeam = TEAMS[8];
+    pendingMode = 'cpu';
+    launchMatch();
+  };
 
   const sideFormation = (side: 0 | 1): FormationId => (side === 0 ? homeFormation : awayFormation);
 
@@ -153,6 +177,7 @@ export function makeApp(deps: AppDeps): App {
       pitch: PITCHES[options.pitchIndex],
     });
     clearActionEdges(); // don't let the confirming keypress leak in as a kick
+    fullTimeTimer = 0;
     screen = 'match';
     emitSfx('uiSelect');
   }
@@ -303,9 +328,25 @@ export function makeApp(deps: AppDeps): App {
     }
   }
 
+  function enterPostMatch(): void {
+    postMatch.cursor = 0;
+    screen = 'postMatch';
+    emitSfx('uiSelect');
+  }
+
   function updateMatch(dt: number): void {
     if (!session) return;
     const c = consumeMatchControls();
+
+    // Full time: hold the FULL TIME overlay for a beat (Esc skips), then show
+    // the result screen with PLAY AGAIN / MAIN MENU. The match sim is frozen.
+    if (session.match.phase === 'fulltime') {
+      fullTimeTimer += dt;
+      if (c.exit || fullTimeTimer >= FULLTIME_HOLD) enterPostMatch();
+      else stepSession(session, dt); // keeps the ball settling + crowd alive
+      return;
+    }
+
     if (c.exit) {
       session = null;
       screen = 'mainMenu';
@@ -319,6 +360,34 @@ export function makeApp(deps: AppDeps): App {
       session.state.controlled2 = null;
     }
     stepSession(session, dt);
+  }
+
+  function updatePostMatch(): void {
+    if (!session) {
+      screen = 'mainMenu';
+      return;
+    }
+    const m = consumeMenuInput();
+    if (m.up && listMove(postMatch, -1)) emitSfx('uiMove');
+    if (m.down && listMove(postMatch, 1)) emitSfx('uiMove');
+    if (m.confirm) {
+      emitSfx('uiSelect');
+      if (postMatch.cursor === 0) {
+        restartSession(session); // replay the same matchup
+        clearActionEdges();
+        fullTimeTimer = 0;
+        screen = 'match';
+      } else {
+        session = null;
+        screen = 'mainMenu';
+      }
+      return;
+    }
+    if (m.back) {
+      emitSfx('uiSelect');
+      session = null;
+      screen = 'mainMenu';
+    }
   }
 
   // --- drawing --------------------------------------------------------------
@@ -444,6 +513,19 @@ export function makeApp(deps: AppDeps): App {
     drawTextCentered(ctx, 'ARROWS CHANGE   ESC BACK', 0, VIEW_W, VIEW_H - 14, SUBTLE, 1);
   }
 
+  function drawPostMatch(): void {
+    drawBackdrop();
+    drawHeader('FULL TIME');
+    if (session) {
+      const { home, away } = session.config;
+      const [hs, as] = session.match.score;
+      drawTextCentered(ctx, `${home.short} ${hs} - ${as} ${away.short}`, 0, VIEW_W, 60, DEFAULT_STYLE.hi, 3);
+      drawTextCentered(ctx, `${home.name}  V  ${away.name}`, 0, VIEW_W, 96, SUBTLE, 1);
+    }
+    drawList(ctx, postMatch, VIEW_W / 2, 150, DEFAULT_STYLE);
+    drawTextCentered(ctx, 'SPACE SELECT   ESC MENU', 0, VIEW_W, VIEW_H - 14, SUBTLE, 1);
+  }
+
   function drawMatch(alpha: number): void {
     if (!session) return;
     renderMatch(session, alpha);
@@ -481,6 +563,9 @@ export function makeApp(deps: AppDeps): App {
         case 'match':
           updateMatch(dt);
           break;
+        case 'postMatch':
+          updatePostMatch();
+          break;
       }
     },
     draw(alpha: number): void {
@@ -507,6 +592,9 @@ export function makeApp(deps: AppDeps): App {
           break;
         case 'options':
           drawOptions();
+          break;
+        case 'postMatch':
+          drawPostMatch();
           break;
       }
     },
