@@ -52,13 +52,16 @@ const HOLD_DROP = 6; // extra goal-side bias on the holding block when defending
 const VERT_TRACK = 0.5; // uniform vertical tracking: how far each line moves home->ball depth
 const MID_Y = (FIELD_T + FIELD_B) / 2;
 
-// Goalkeeper dive tuning.
-const DIVE_SPEED = 150; // lateral lunge speed along the goal line
-const DIVE_POP = 64; // initial vz so the keeper leaves the ground
+// Goalkeeper dive tuning. The keeper aims to arrive at the ball's crossing
+// point exactly as the ball gets there (not a constant-speed lunge that
+// overshoots), in a low, deliberate arc so it reads as a slowed dive.
+const DIVE_SPEED = 150; // cap on lateral lunge speed along the goal line
 const GK_GRAVITY = 360; // pulls the diving keeper back down (matches the ball)
 const DIVE_LOOKAHEAD = 0.62; // only react to shots arriving within this many sec
 const DIVE_REACH_MIN = 6; // smaller offsets are covered just by standing/tracking
-const DIVE_REACH_MAX = 40; // beyond this the keeper can't get there — it's a goal
+const DIVE_REACH_MAX = 44; // beyond this the keeper can't get there — it's a goal
+const DIVE_FLIGHT_MIN = 0.34; // min airborne time — keeps the dive deliberate, low
+const DIVE_FLIGHT_MAX = 0.6; // cap so a far shot doesn't float forever
 
 function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
@@ -559,11 +562,15 @@ function gkAi(state: GameState, p: Player, dt: number): void {
       const onTarget = Math.abs(predX - CX) < GOAL_W / 2 + 6;
       const offset = predX - p.x;
       if (onTarget && Math.abs(offset) > DIVE_REACH_MIN && Math.abs(offset) < DIVE_REACH_MAX) {
+        const flight = clamp(t, DIVE_FLIGHT_MIN, DIVE_FLIGHT_MAX);
         p.state = 'gkdive';
         p.dir = offset > 0 ? Dir.R : Dir.L;
-        p.vx = Math.sign(offset) * DIVE_SPEED;
+        // Reach the crossing point exactly as the ball arrives (capped), in a
+        // low arc that lands ~flight later — so the keeper meets the low ball
+        // instead of sailing past it.
+        p.vx = clamp(offset / t, -DIVE_SPEED, DIVE_SPEED);
         p.vy = 0;
-        p.vz = DIVE_POP;
+        p.vz = (GK_GRAVITY * flight) / 2;
         return;
       }
     }

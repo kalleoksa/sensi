@@ -158,6 +158,15 @@ export function makeApp(deps: AppDeps): App {
       pendingMode = '1p';
       screen = 'compHub';
     },
+    // Deterministic single-step for debugging: run n fixed sim ticks regardless
+    // of the (throttled) rAF loop or pause state.
+    step: (n = 1) => {
+      if (!session) return;
+      const wasPaused = session.paused;
+      session.paused = false;
+      for (let i = 0; i < n; i++) stepSession(session, 1 / 60);
+      session.paused = wasPaused;
+    },
   };
 
   const sideFormation = (side: 0 | 1): FormationId => (side === 0 ? homeFormation : awayFormation);
