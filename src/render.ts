@@ -78,9 +78,8 @@ function drawPlayerShadow(ctx: CanvasRenderingContext2D, p: Player, cam: Camera,
 
 export function makeRenderer(
   ctx: CanvasRenderingContext2D,
-  baked: BakedPitch,
-): (state: GameState, alpha: number, match: Match, paused: boolean) => void {
-  return (state, alpha, match, paused) => {
+): (baked: BakedPitch, state: GameState, alpha: number, match: Match, paused: boolean) => void {
+  return (baked, state, alpha, match, paused) => {
     const cam = state.camera;
 
     ctx.imageSmoothingEnabled = false;

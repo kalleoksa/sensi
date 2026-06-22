@@ -4,6 +4,7 @@
 // draw them on top of entities (the net must occlude the ball).
 
 import { pixelHash } from '../rng';
+import type { Pitch, GrassTint } from '../options';
 import {
   GRASS_L,
   GRASS_D,
@@ -292,19 +293,35 @@ function decorate(b: Buf, x: number, y: number, d: number, perim: number): void 
   b.set(x, y, panel);
 }
 
-export function bakePitch(): BakedPitch {
+// Recolor a grass tone per the chosen surface (see options.GrassTint): scale
+// by brightness, then blend toward the target. Applied equally to all three
+// grass tones so the subtle band/mottle delta survives the shift.
+function tintGrass(c: RGB, t: GrassTint): RGB {
+  const ch = (v: number, target: number): number => {
+    const scaled = v * t.bright;
+    const out = scaled + (target - scaled) * t.amt;
+    return Math.round(out < 0 ? 0 : out > 255 ? 255 : out);
+  };
+  return [ch(c[0], t.toward[0]), ch(c[1], t.toward[1]), ch(c[2], t.toward[2])];
+}
+
+export function bakePitch(tint?: GrassTint): BakedPitch {
   const canvas = makeCanvas(WORLD_W, WORLD_H);
   const ctx = canvas.getContext('2d')!;
   const img = ctx.createImageData(WORLD_W, WORLD_H);
   const b = new Buf(WORLD_W, WORLD_H, img);
 
+  const gL = tint ? tintGrass(GRASS_L, tint) : GRASS_L;
+  const gD = tint ? tintGrass(GRASS_D, tint) : GRASS_D;
+  const gDD = tint ? tintGrass(GRASS_DD, tint) : GRASS_DD;
+
   // Grass: world-space diamond banding + hash mottle.
   for (let y = 0; y < WORLD_H; y++) {
     for (let x = 0; x < WORLD_W; x++) {
       const band = (Math.floor((x + y) / 24) + Math.floor((x - y) / 24)) & 1;
-      let base = band === 0 ? GRASS_L : GRASS_D;
+      let base = band === 0 ? gL : gD;
       if (pixelHash(x, y) % 100 < 18) {
-        base = base === GRASS_D ? GRASS_DD : GRASS_D;
+        base = base === gD ? gDD : gD;
       }
       b.set(x, y, base);
     }
@@ -334,4 +351,16 @@ export function bakePitch(): BakedPitch {
     goalTop: bakeGoalFrame(true),
     goalBottom: bakeGoalFrame(false),
   };
+}
+
+// Baking the full pitch is a per-pixel pass, so cache one BakedPitch per
+// surface (keyed by name) and reuse it across matches on that surface.
+const pitchCache = new Map<string, BakedPitch>();
+export function bakePitchFor(pitch: Pitch): BakedPitch {
+  let baked = pitchCache.get(pitch.name);
+  if (!baked) {
+    baked = bakePitch(pitch.tint);
+    pitchCache.set(pitch.name, baked);
+  }
+  return baked;
 }

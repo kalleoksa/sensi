@@ -6,7 +6,7 @@
 import { VIEW_W, VIEW_H } from './world';
 import { startLoop } from './loop';
 import { initInput } from './input';
-import { bakePitch } from './sprites/pitch_gen';
+import { bakePitchFor } from './sprites/pitch_gen';
 import { makeRenderer } from './render';
 import { initAudio, flushSfx } from './audio';
 import { makeApp } from './app';
@@ -29,9 +29,11 @@ fitToWindow();
 initInput();
 initAudio(); // unlocks on first gesture; "M" toggles mute
 
-const baked = bakePitch();
-const render = makeRenderer(ctx, baked);
-const renderMatch = (s: Session, alpha: number): void => render(s.state, alpha, s.match, s.paused);
+const render = makeRenderer(ctx);
+// Each session carries its chosen surface; bakePitchFor caches one tinted
+// pitch per surface, so the grass matches the surface's physics.
+const renderMatch = (s: Session, alpha: number): void =>
+  render(bakePitchFor(s.config.pitch), s.state, alpha, s.match, s.paused);
 
 const app = makeApp({ ctx, renderMatch });
 

@@ -146,7 +146,8 @@ export function makeApp(deps: AppDeps): App {
   (window as unknown as { __sensiDev?: unknown }).__sensiDev = {
     session: () => session,
     competition: () => competition,
-    quickMatch: () => {
+    quickMatch: (pitchIndex?: number) => {
+      if (typeof pitchIndex === 'number') options.pitchIndex = pitchIndex;
       ts.home = TEAMS[0];
       awayTeam = TEAMS[8];
       pendingMode = 'cpu';
