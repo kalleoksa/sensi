@@ -5,7 +5,7 @@
 // at module load; a session is created on demand when a Friendly launches.
 
 import { VIEW_W, VIEW_H, FIELD_T, FIELD_B } from './world';
-import { drawTextCentered } from './sprites/font';
+import { drawText, drawTextCentered } from './sprites/font';
 import { makeList, listMove, drawList, DEFAULT_STYLE, type ListStyle, type ListView } from './menu';
 import { consumeMenuInput, consumeMatchControls, clearActionEdges } from './input';
 import { emitSfx, setCrowdIntensity } from './audio';
@@ -26,6 +26,17 @@ import {
   type Slot,
 } from './formations';
 import { MATCH_LENGTHS, PITCHES, DEFAULT_OPTIONS, type MatchOptions } from './options';
+import {
+  makeCompetition,
+  yourFixture,
+  recordYourResult,
+  simRound,
+  advance,
+  leagueTable,
+  cupRoundName,
+  type Competition,
+  type CompetitionKind,
+} from './competition';
 import { css } from './sprites/palette';
 
 type AppScreen =
@@ -36,13 +47,16 @@ type AppScreen =
   | 'preMatch'
   | 'options'
   | 'match'
-  | 'postMatch';
+  | 'postMatch'
+  | 'compHub'
+  | 'compResults'
+  | 'compEnd';
 
 const POSTMATCH_ITEMS = ['PLAY AGAIN', 'MAIN MENU'];
 const FULLTIME_HOLD = 3; // seconds the FULL TIME overlay holds before the result screen
 
 const MAIN_ITEMS = ['FRIENDLY', 'CUP', 'LEAGUE', 'SPECIALS', 'OPTIONS', 'EDIT TEAMS'];
-const MAIN_ENABLED = [true, false, false, false, true, false];
+const MAIN_ENABLED = [true, true, true, false, true, false];
 
 const FRIENDLY_ITEMS = ['1 PLAYER', '2 PLAYERS', 'CPU V CPU'];
 const FRIENDLY_MODES: ControlMode[] = ['1p', '2p', 'cpu'];
@@ -107,6 +121,13 @@ export function makeApp(deps: AppDeps): App {
   const options: MatchOptions = { ...DEFAULT_OPTIONS };
   let optCursor = 0; // which Options row is active (0 = length, 1 = pitch)
 
+  // Competition state (Cup / League). The team browser is shared with the
+  // friendly flow; tsPurpose decides whether picking a team starts a match or a
+  // competition.
+  let tsPurpose: 'friendly' | 'competition' = 'friendly';
+  let pendingComp: CompetitionKind = 'league';
+  let competition: Competition | null = null;
+
   const mainMenu = makeList(MAIN_ITEMS, MAIN_ENABLED);
   const friendly = makeList(FRIENDLY_ITEMS);
   const ts: TeamSelectState = {
@@ -120,15 +141,22 @@ export function makeApp(deps: AppDeps): App {
   const postMatch = makeList(POSTMATCH_ITEMS);
   let fullTimeTimer = 0; // counts the FULL TIME hold before the result screen
 
-  // Dev handles for inspection/testing (mirrors the old __game/__match hooks):
-  // __sensi() returns the live session; __sensiQuickMatch() jumps straight into
-  // a CPU-v-CPU match, bypassing the menus.
+  // Dev handles for inspection/testing (mirrors the old __game/__match hooks).
   (window as unknown as { __sensi?: () => Session | null }).__sensi = () => session;
-  (window as unknown as { __sensiQuickMatch?: () => void }).__sensiQuickMatch = () => {
-    ts.home = TEAMS[0];
-    awayTeam = TEAMS[8];
-    pendingMode = 'cpu';
-    launchMatch();
+  (window as unknown as { __sensiDev?: unknown }).__sensiDev = {
+    session: () => session,
+    competition: () => competition,
+    quickMatch: () => {
+      ts.home = TEAMS[0];
+      awayTeam = TEAMS[8];
+      pendingMode = 'cpu';
+      launchMatch();
+    },
+    quickComp: (kind: CompetitionKind) => {
+      competition = makeCompetition(kind, [...TEAMS], TEAMS[0], Date.now() >>> 0);
+      pendingMode = '1p';
+      screen = 'compHub';
+    },
   };
 
   const sideFormation = (side: 0 | 1): FormationId => (side === 0 ? homeFormation : awayFormation);
@@ -139,6 +167,7 @@ export function makeApp(deps: AppDeps): App {
   }
 
   function enterTeamSelect(): void {
+    tsPurpose = 'friendly';
     ts.picking = 'home';
     ts.level = 'continent';
     ts.home = null;
@@ -147,6 +176,29 @@ export function makeApp(deps: AppDeps): App {
     awayFormation = DEFAULT_FORMATION;
     ts.list = makeList([...CONTINENTS]);
     screen = 'teamSelect';
+  }
+
+  function enterCompetition(kind: CompetitionKind): void {
+    tsPurpose = 'competition';
+    pendingComp = kind;
+    ts.level = 'continent';
+    ts.home = null;
+    homeFormation = DEFAULT_FORMATION;
+    awayFormation = DEFAULT_FORMATION;
+    ts.list = makeList([...CONTINENTS]);
+    screen = 'teamSelect';
+  }
+
+  // Begin the player's match for the current competition fixture.
+  function playCompMatch(): void {
+    if (!competition) return;
+    const f = yourFixture(competition);
+    if (!f) return;
+    const opp = f.a === competition.you ? f.b : f.a;
+    ts.home = competition.you; // the player always controls the home slot (team 0)
+    awayTeam = opp;
+    pendingMode = '1p';
+    beginPreMatch();
   }
 
   // After both teams are chosen, each human side picks a formation; CPU sides
@@ -201,6 +253,10 @@ export function makeApp(deps: AppDeps): App {
       if (label === 'FRIENDLY') {
         friendly.cursor = 0;
         screen = 'friendlySetup';
+      } else if (label === 'CUP') {
+        enterCompetition('cup');
+      } else if (label === 'LEAGUE') {
+        enterCompetition('league');
       } else if (label === 'OPTIONS') {
         optCursor = 0;
         screen = 'options';
@@ -236,7 +292,7 @@ export function makeApp(deps: AppDeps): App {
         ts.home = null;
         ts.list = makeList([...CONTINENTS]);
       } else {
-        screen = 'friendlySetup';
+        screen = tsPurpose === 'competition' ? 'mainMenu' : 'friendlySetup';
       }
       return;
     }
@@ -251,6 +307,12 @@ export function makeApp(deps: AppDeps): App {
     }
     // Team level: a nation was chosen.
     const chosen = teamsIn(CONTINENTS[ts.continent])[ts.list.cursor];
+    if (tsPurpose === 'competition') {
+      competition = makeCompetition(pendingComp, [...TEAMS], chosen, Date.now() >>> 0);
+      pendingMode = '1p';
+      screen = 'compHub';
+      return;
+    }
     if (ts.picking === 'home') {
       ts.home = chosen;
       ts.picking = 'away';
@@ -342,8 +404,12 @@ export function makeApp(deps: AppDeps): App {
     // the result screen with PLAY AGAIN / MAIN MENU. The match sim is frozen.
     if (session.match.phase === 'fulltime') {
       fullTimeTimer += dt;
-      if (c.exit || fullTimeTimer >= FULLTIME_HOLD) enterPostMatch();
-      else stepSession(session, dt); // keeps the ball settling + crowd alive
+      if (c.exit || fullTimeTimer >= FULLTIME_HOLD) {
+        if (competition) enterCompResults();
+        else enterPostMatch();
+      } else {
+        stepSession(session, dt); // keeps the ball settling + crowd alive
+      }
       return;
     }
 
@@ -385,6 +451,64 @@ export function makeApp(deps: AppDeps): App {
     }
     if (m.back) {
       emitSfx('uiSelect');
+      session = null;
+      screen = 'mainMenu';
+    }
+  }
+
+  // --- competition flow -----------------------------------------------------
+
+  // Record the player's result and simulate the rest of the round, then show
+  // the results screen.
+  function enterCompResults(): void {
+    if (!competition || !session) {
+      screen = 'mainMenu';
+      return;
+    }
+    recordYourResult(competition, session.match.score[0], session.match.score[1]);
+    simRound(competition);
+    emitSfx('uiSelect');
+    screen = 'compResults';
+  }
+
+  function updateCompHub(): void {
+    if (!competition) {
+      screen = 'mainMenu';
+      return;
+    }
+    const m = consumeMenuInput();
+    if (m.confirm) {
+      emitSfx('uiSelect');
+      playCompMatch();
+      return;
+    }
+    if (m.back) {
+      emitSfx('uiSelect');
+      competition = null;
+      session = null;
+      screen = 'mainMenu';
+    }
+  }
+
+  function updateCompResults(): void {
+    if (!competition) {
+      screen = 'mainMenu';
+      return;
+    }
+    const m = consumeMenuInput();
+    if (m.confirm || m.back) {
+      emitSfx('uiSelect');
+      advance(competition);
+      session = null; // finished match no longer needed
+      screen = competition.done ? 'compEnd' : 'compHub';
+    }
+  }
+
+  function updateCompEnd(): void {
+    const m = consumeMenuInput();
+    if (m.confirm || m.back) {
+      emitSfx('uiSelect');
+      competition = null;
       session = null;
       screen = 'mainMenu';
     }
@@ -442,11 +566,16 @@ export function makeApp(deps: AppDeps): App {
 
   function drawTeamSelect(): void {
     drawBackdrop();
-    const who = ts.picking === 'home' ? 'SELECT HOME TEAM' : 'SELECT AWAY TEAM';
+    const who =
+      tsPurpose === 'competition'
+        ? 'SELECT YOUR TEAM'
+        : ts.picking === 'home'
+          ? 'SELECT HOME TEAM'
+          : 'SELECT AWAY TEAM';
     drawHeader(who);
 
     // Show the already-picked home team while choosing the away side.
-    if (ts.picking === 'away' && ts.home) {
+    if (tsPurpose === 'friendly' && ts.picking === 'away' && ts.home) {
       drawTextCentered(ctx, `HOME: ${ts.home.name}`, 0, VIEW_W, 30, SUBTLE, 1);
     }
 
@@ -526,6 +655,106 @@ export function makeApp(deps: AppDeps): App {
     drawTextCentered(ctx, 'SPACE SELECT   ESC MENU', 0, VIEW_W, VIEW_H - 14, SUBTLE, 1);
   }
 
+  // Small left-aligned text helper (scale 1).
+  function text1(s: string, x: number, y: number, color: string): void {
+    drawText(ctx, s, x, y, color, 1);
+  }
+
+  function drawLeagueTable(comp: Competition): void {
+    const table = leagueTable(comp);
+    const x = { pos: 10, team: 34, p: 200, gd: 236, pts: 286 };
+    text1('P', x.p, 44, SUBTLE);
+    text1('GD', x.gd, 44, SUBTLE);
+    text1('PTS', x.pts, 44, SUBTLE);
+    let y = 54;
+    for (let i = 0; i < table.length; i++) {
+      const r = table[i];
+      const mine = r.team === comp.you;
+      const c = mine ? DEFAULT_STYLE.hi : DEFAULT_STYLE.on;
+      const gd = r.gf - r.ga;
+      text1(`${i + 1}`, x.pos, y, c);
+      text1(r.team.short, x.team, y, c);
+      text1(`${r.p}`, x.p, y, c);
+      text1(`${gd > 0 ? '+' : ''}${gd}`, x.gd, y, c);
+      text1(`${r.pts}`, x.pts, y, c);
+      y += 10;
+    }
+  }
+
+  function drawCupRound(comp: Competition): void {
+    const ties = comp.rounds[comp.roundIndex] ?? [];
+    let y = 56;
+    for (const f of ties) {
+      const mine = f.a === comp.you || f.b === comp.you;
+      const c = mine ? DEFAULT_STYLE.hi : DEFAULT_STYLE.on;
+      const scoreShown = f.played;
+      const mid = scoreShown ? `${f.sa} - ${f.sb}` : 'V';
+      const line = `${f.a.short} ${mid} ${f.b.short}`;
+      drawTextCentered(ctx, line, 0, VIEW_W, y, c, 2);
+      y += 22;
+    }
+  }
+
+  function drawCompHub(): void {
+    if (!competition) return;
+    drawBackdrop();
+    const f = yourFixture(competition);
+    if (competition.kind === 'league') {
+      drawHeader('LEAGUE');
+      drawTextCentered(ctx, `ROUND ${competition.roundIndex + 1} / ${competition.rounds.length}`, 0, VIEW_W, 28, SUBTLE, 1);
+      drawLeagueTable(competition);
+    } else {
+      drawHeader('CUP');
+      drawTextCentered(ctx, cupRoundName(competition), 0, VIEW_W, 28, SUBTLE, 1);
+      drawCupRound(competition);
+    }
+    if (f) {
+      const opp = f.a === competition.you ? f.b : f.a;
+      drawTextCentered(ctx, `NEXT: ${competition.you.short} V ${opp.short}`, 0, VIEW_W, VIEW_H - 28, DEFAULT_STYLE.hi, 1);
+    }
+    drawTextCentered(ctx, 'SPACE PLAY   ESC QUIT', 0, VIEW_W, VIEW_H - 14, SUBTLE, 1);
+  }
+
+  function drawCompResults(): void {
+    if (!competition) return;
+    drawBackdrop();
+    const title =
+      competition.kind === 'cup' ? `${cupRoundName(competition)} RESULTS` : `ROUND ${competition.roundIndex + 1} RESULTS`;
+    drawHeader('RESULTS');
+    drawTextCentered(ctx, title, 0, VIEW_W, 28, SUBTLE, 1);
+    const round = competition.rounds[competition.roundIndex] ?? [];
+    let y = 48;
+    for (const f of round) {
+      const mine = f.a === competition.you || f.b === competition.you;
+      const c = mine ? DEFAULT_STYLE.hi : DEFAULT_STYLE.on;
+      let line = `${f.a.short} ${f.sa} - ${f.sb} ${f.b.short}`;
+      if (competition.kind === 'cup' && f.sa === f.sb && f.winner) line += ` (${f.winner.short} PENS)`;
+      drawTextCentered(ctx, line, 0, VIEW_W, y, c, mine ? 2 : 1);
+      y += mine ? 18 : 12;
+    }
+    drawTextCentered(ctx, 'SPACE CONTINUE', 0, VIEW_W, VIEW_H - 14, SUBTLE, 1);
+  }
+
+  function drawCompEnd(): void {
+    if (!competition) return;
+    drawBackdrop();
+    drawHeader('FULL TIME');
+    const won = competition.champion === competition.you;
+    if (competition.kind === 'cup') {
+      if (won) {
+        drawTextCentered(ctx, 'CUP WINNERS!', 0, VIEW_W, 80, DEFAULT_STYLE.hi, 3);
+        drawTextCentered(ctx, competition.you.name, 0, VIEW_W, 120, DEFAULT_STYLE.on, 2);
+      } else {
+        drawTextCentered(ctx, 'KNOCKED OUT', 0, VIEW_W, 90, DEFAULT_STYLE.hi, 3);
+      }
+    } else {
+      const champ = competition.champion;
+      drawTextCentered(ctx, won ? 'CHAMPIONS!' : 'LEAGUE OVER', 0, VIEW_W, 80, DEFAULT_STYLE.hi, 3);
+      if (champ) drawTextCentered(ctx, `WINNERS: ${champ.name}`, 0, VIEW_W, 124, DEFAULT_STYLE.on, 2);
+    }
+    drawTextCentered(ctx, 'SPACE MENU', 0, VIEW_W, VIEW_H - 14, SUBTLE, 1);
+  }
+
   function drawMatch(alpha: number): void {
     if (!session) return;
     renderMatch(session, alpha);
@@ -566,6 +795,15 @@ export function makeApp(deps: AppDeps): App {
         case 'postMatch':
           updatePostMatch();
           break;
+        case 'compHub':
+          updateCompHub();
+          break;
+        case 'compResults':
+          updateCompResults();
+          break;
+        case 'compEnd':
+          updateCompEnd();
+          break;
       }
     },
     draw(alpha: number): void {
@@ -595,6 +833,15 @@ export function makeApp(deps: AppDeps): App {
           break;
         case 'postMatch':
           drawPostMatch();
+          break;
+        case 'compHub':
+          drawCompHub();
+          break;
+        case 'compResults':
+          drawCompResults();
+          break;
+        case 'compEnd':
+          drawCompEnd();
           break;
       }
     },

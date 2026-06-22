@@ -19,7 +19,7 @@ npm run build    # type-check + production build to dist/
 npm run preview  # serve the production build
 ```
 
-The game runs at a base resolution of 320×280 game pixels, integer-scaled to
+The game runs at a base resolution of 320×256 game pixels, integer-scaled to
 your window with nearest-neighbour filtering for crisp pixels.
 
 ## Controls
