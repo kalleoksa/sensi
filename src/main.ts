@@ -18,18 +18,12 @@ canvas.height = VIEW_H;
 const ctx = canvas.getContext('2d')!;
 ctx.imageSmoothingEnabled = false;
 
-const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
 function fitToWindow(): void {
-  const fit = Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H);
-  // Desktop keeps crisp pixel-perfect integer scaling. Touch devices fill the
-  // viewport (fractional, aspect-preserved) so the pitch isn't a tiny 320x256
-  // island on a big phone — and never overflows a screen narrower than 320px.
-  const scale = coarsePointer ? fit : Math.max(1, Math.floor(fit));
+  const scale = Math.max(1, Math.min(Math.floor(window.innerWidth / VIEW_W), Math.floor(window.innerHeight / VIEW_H)));
   canvas.style.width = `${VIEW_W * scale}px`;
   canvas.style.height = `${VIEW_H * scale}px`;
 }
 window.addEventListener('resize', fitToWindow);
-window.addEventListener('orientationchange', fitToWindow);
 fitToWindow();
 
 initInput();
