@@ -300,6 +300,54 @@ function fallenSprite(col: PlayerColors): Px[] {
   return px;
 }
 
+// Goalkeeper dive: a flat, airborne keeper laid out horizontally, reaching
+// toward the save (local +x). Two frames — gathered on the way up (0), fully
+// stretched at the apex/descent (1). Drawn pointing right; spriteFor mirrors it
+// for a leftward dive. Centered in the cell (render anchors it on the center,
+// like slide/fallen) and lifted off the ground by p.z while in the air.
+function gkDiveSprite(frame: number, col: PlayerColors): Px[] {
+  const px: Px[] = [];
+  const add = (x: number, y: number, c: RGB) => px.push({ x, y, c });
+  const cy = 5;
+  if (frame === 0) {
+    // Gathered: knees up, arms half-extended.
+    add(1, cy + 1, BLACK); // trailing boot
+    add(2, cy + 1, col.socks);
+    add(2, cy, col.skin); // tucked leg
+    add(3, cy, col.shorts);
+    add(3, cy + 1, col.shorts);
+    add(4, cy - 1, col.shirt); // torso
+    add(4, cy, col.shirt);
+    add(5, cy - 1, col.shirt);
+    add(5, cy, col.shirt);
+    add(5, cy - 2, col.hair); // head leading + up
+    add(6, cy - 2, col.hair);
+    add(6, cy - 1, col.skin); // face
+    add(6, cy, col.shirt); // sleeve
+    add(7, cy, col.skin); // hand
+    add(7, cy - 1, col.skin);
+  } else {
+    // Fully stretched horizontal: hands reaching far, legs trailing.
+    add(0, cy, BLACK); // trailing boot
+    add(1, cy, col.socks);
+    add(2, cy, col.skin); // leg
+    add(3, cy - 1, col.shorts);
+    add(3, cy, col.shorts);
+    add(4, cy - 1, col.shirt); // torso
+    add(4, cy, col.shirt);
+    add(5, cy - 1, col.shirt);
+    add(5, cy, col.shirt);
+    add(5, cy - 2, col.hair); // head up
+    add(6, cy - 2, col.hair);
+    add(6, cy - 1, col.skin); // face
+    add(6, cy, col.shirt); // arm
+    add(7, cy, col.skin); // reaching hands
+    add(8, cy, col.skin);
+    add(8, cy - 1, col.skin);
+  }
+  return px;
+}
+
 function poseForRunFrame(frame: number): 'f0' | 'f1' | 'f2' {
   // CYCLE = [0,1,2,1] -> contact, pass, contact', pass
   return frame === 0 ? 'f0' : frame === 2 ? 'f2' : 'f1';
@@ -334,6 +382,9 @@ function buildCell(
   }
   if (state === 'fallen') {
     return fallenSprite(col);
+  }
+  if (state === 'gkdive') {
+    return gkDiveSprite(frame, col);
   }
   const px: Px[] = [
     ...head(f, col.hair, col.skin),
@@ -377,6 +428,7 @@ const STATE_FRAMES: Record<string, number> = {
   slide: 2,
   header: 1,
   fallen: 1,
+  gkdive: 2,
 };
 
 const cache = new Map<string, Atlas>();
@@ -393,7 +445,7 @@ export function buildAtlas(colorsIn: Partial<PlayerColors> & Pick<PlayerColors, 
   if (hit) return hit;
 
   const cells = new Map<string, HTMLCanvasElement>();
-  const states: PlayerState[] = ['idle', 'run', 'kick', 'slide', 'fallen'];
+  const states: PlayerState[] = ['idle', 'run', 'kick', 'slide', 'fallen', 'gkdive'];
   // Facing vector per base dir for leg/kick thrust.
   const FV: Record<number, [number, number]> = {
     [Dir.U]: [0, -1],

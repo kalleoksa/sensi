@@ -13,7 +13,7 @@
 //             defenders mark opposing attackers goal-side, rest hold compact.
 //   loose   — no carrier: the nearest chases, everyone else tracks the ball.
 
-import type { GameState, Player } from './state';
+import { Dir, type GameState, type Player } from './state';
 import { moveToward, kickToward, PLAYER_SPEED } from './player';
 import { GROUND_FRICTION } from './ball';
 import { FIELD_T, FIELD_B, FIELD_L, FIELD_R, PLAY_W, CX, GOAL_W } from './world';
@@ -51,6 +51,14 @@ const COVER_GAP = 22; // the cover player sits this far behind the ball toward o
 const HOLD_DROP = 6; // extra goal-side bias on the holding block when defending
 const VERT_TRACK = 0.5; // uniform vertical tracking: how far each line moves home->ball depth
 const MID_Y = (FIELD_T + FIELD_B) / 2;
+
+// Goalkeeper dive tuning.
+const DIVE_SPEED = 150; // lateral lunge speed along the goal line
+const DIVE_POP = 64; // initial vz so the keeper leaves the ground
+const GK_GRAVITY = 360; // pulls the diving keeper back down (matches the ball)
+const DIVE_LOOKAHEAD = 0.62; // only react to shots arriving within this many sec
+const DIVE_REACH_MIN = 6; // smaller offsets are covered just by standing/tracking
+const DIVE_REACH_MAX = 40; // beyond this the keeper can't get there — it's a goal
 
 function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
@@ -514,12 +522,53 @@ function holdAi(state: GameState, p: Player, dt: number): void {
 
 function gkAi(state: GameState, p: Player, dt: number): void {
   const b = state.ball;
-  // Cleared the ball if it ended up at the keeper's feet.
+
+  // Mid-dive: the keeper is airborne and committed — coast laterally under
+  // gravity until it lands. resolvePossession turns a body that reaches the low
+  // ball into a catch on its own.
+  if (p.state === 'gkdive') {
+    p.prevX = p.x;
+    p.prevY = p.y;
+    p.x += p.vx * dt;
+    p.vz -= GK_GRAVITY * dt;
+    p.z += p.vz * dt;
+    if (p.z <= 0) {
+      p.z = 0;
+      p.vz = 0;
+      p.vx = 0;
+      p.state = 'idle';
+    }
+    return;
+  }
+
+  // Cleared the ball if it ended up at the keeper's feet (caught a dive too).
   if (state.carrier === p) {
+    p.z = 0;
     kickToward(state, p, CX + (b.x < CX ? 40 : -40), MID_Y, 300, 90);
     return;
   }
   const lineY = ownGoalY(p) + (p.attacksTop ? -7 : 7);
+
+  // Dive at a low shot heading goalward that will cross the line offset from the
+  // keeper — too far to cover by tracking, but within a dive's reach.
+  const towardGoal = p.attacksTop ? b.vy > 60 : b.vy < -60;
+  if (towardGoal && b.z < 12) {
+    const t = (lineY - b.y) / b.vy; // time until the ball reaches the line
+    if (t > 0 && t < DIVE_LOOKAHEAD) {
+      const predX = b.x + b.vx * t;
+      const onTarget = Math.abs(predX - CX) < GOAL_W / 2 + 6;
+      const offset = predX - p.x;
+      if (onTarget && Math.abs(offset) > DIVE_REACH_MIN && Math.abs(offset) < DIVE_REACH_MAX) {
+        p.state = 'gkdive';
+        p.dir = offset > 0 ? Dir.R : Dir.L;
+        p.vx = Math.sign(offset) * DIVE_SPEED;
+        p.vy = 0;
+        p.vz = DIVE_POP;
+        return;
+      }
+    }
+  }
+
   const tx = clamp(b.x, CX - GOAL_W / 2 + 4, CX + GOAL_W / 2 - 4);
   // Edge off the line toward the ball when it's close and central.
   const ballClose = Math.abs(b.y - lineY) < 80 && Math.abs(b.x - CX) < GOAL_W;
