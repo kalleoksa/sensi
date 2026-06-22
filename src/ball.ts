@@ -11,6 +11,16 @@ export const GROUND_FRICTION = 2.2; // per-second velocity decay while rolling
 export const AIR_DRAG = 0.15; // light horizontal drag in flight
 export const BALL_RADIUS = 1.5;
 
+// Pitch-condition multipliers, set once per match from the chosen surface (see
+// options.ts). >1 friction = a slow/draggy pitch (mud); <1 = slick (ice). These
+// are a fixed config for the match, so the seeded sim stays deterministic.
+let frictionMul = 1;
+let bounceMul = 1;
+export function setPitch(friction: number, bounce: number): void {
+  frictionMul = friction;
+  bounceMul = bounce;
+}
+
 export function makeBall(x: number, y: number): Ball {
   return {
     x,
@@ -51,8 +61,8 @@ export function stepBall(b: Ball, dt: number): void {
   }
 
   if (grounded) {
-    // Rolling friction.
-    const decay = Math.exp(-GROUND_FRICTION * dt);
+    // Rolling friction (scaled by the pitch surface).
+    const decay = Math.exp(-GROUND_FRICTION * frictionMul * dt);
     b.vx *= decay;
     b.vy *= decay;
     if (Math.hypot(b.vx, b.vy) < 2) {
@@ -76,7 +86,7 @@ export function stepBall(b: Ball, dt: number): void {
     b.z = 0;
     if (b.vz < 0) {
       const impact = -b.vz; // downward speed at contact
-      b.vz = -b.vz * BOUNCE;
+      b.vz = -b.vz * BOUNCE * bounceMul;
       if (b.vz < 30) b.vz = 0; // settle
       if (impact > 60) emitSfx('bounce', Math.min(1, impact / 300));
     }

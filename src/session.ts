@@ -5,7 +5,7 @@
 
 import { VIEW_W, VIEW_H, makeCamera, updateCamera, FIELD_T, FIELD_B, CX } from './world';
 import { consumeInputs } from './input';
-import { makeBall, stepBall } from './ball';
+import { makeBall, stepBall, setPitch } from './ball';
 import { controlHuman, resolvePossession, resolveSlideTackles } from './player';
 import { makeMatch, updateMatch, startMatch, type Match } from './match';
 import { makeTeams } from './team';
@@ -13,6 +13,8 @@ import { updateTeamAi } from './ai';
 import { makeRng } from './rng';
 import type { GameState, Player } from './state';
 import type { TeamDef } from './teams/data';
+import type { FormationId } from './formations';
+import type { Pitch } from './options';
 
 export type ControlMode = '1p' | '2p' | 'cpu';
 
@@ -20,6 +22,10 @@ export interface MatchConfig {
   home: TeamDef;
   away: TeamDef;
   controlMode: ControlMode;
+  homeFormation: FormationId;
+  awayFormation: FormationId;
+  halfLength: number; // seconds per half
+  pitch: Pitch;
 }
 
 export interface Session {
@@ -55,13 +61,15 @@ export function makeSession(config: MatchConfig): Session {
   const midY = (FIELD_T + FIELD_B) / 2;
   const state: GameState = {
     ball: makeBall(CX, midY),
-    players: makeTeams(rng, config.home, config.away),
+    players: makeTeams(rng, config.home, config.away, config.homeFormation, config.awayFormation),
     camera: makeCamera(),
     carrier: null,
     controlled: null,
     controlled2: null,
   };
+  setPitch(config.pitch.friction, config.pitch.bounce);
   const match = makeMatch();
+  match.halfLength = config.halfLength; // startMatch -> setupHalf resets the clock to this
   startMatch(state, match);
   // Center the camera on the ball at kickoff.
   updateCamera(state.camera, state.ball.x, state.ball.y, 0, 0, 1);

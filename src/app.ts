@@ -17,12 +17,21 @@ import {
   type ControlMode,
 } from './session';
 import { CONTINENTS, teamsIn, type TeamDef, type Kit } from './teams/data';
+import {
+  FORMATION_IDS,
+  FORMATION_NAMES,
+  FORMATIONS,
+  DEFAULT_FORMATION,
+  type FormationId,
+  type Slot,
+} from './formations';
+import { MATCH_LENGTHS, PITCHES, DEFAULT_OPTIONS, type MatchOptions } from './options';
 import { css } from './sprites/palette';
 
-type AppScreen = 'title' | 'mainMenu' | 'friendlySetup' | 'teamSelect' | 'match';
+type AppScreen = 'title' | 'mainMenu' | 'friendlySetup' | 'teamSelect' | 'preMatch' | 'options' | 'match';
 
 const MAIN_ITEMS = ['FRIENDLY', 'CUP', 'LEAGUE', 'SPECIALS', 'OPTIONS', 'EDIT TEAMS'];
-const MAIN_ENABLED = [true, false, false, false, false, false];
+const MAIN_ENABLED = [true, false, false, false, true, false];
 
 const FRIENDLY_ITEMS = ['1 PLAYER', '2 PLAYERS', 'CPU V CPU'];
 const FRIENDLY_MODES: ControlMode[] = ['1p', '2p', 'cpu'];
@@ -34,6 +43,22 @@ interface TeamSelectState {
   home: TeamDef | null;
   list: ListView;
 }
+
+// Pre-match formation pick. queue holds the human side(s) that still need to
+// choose (0 = home/P1, 1 = away/P2); index walks through them.
+interface PreMatchState {
+  queue: (0 | 1)[];
+  index: number;
+  formIdx: number; // into FORMATION_IDS
+}
+
+// Role colours for the formation diagram dots.
+const ROLE_DOT: Record<Slot['role'], string> = {
+  gk: 'rgb(248,236,120)',
+  def: 'rgb(120,170,235)',
+  mid: 'rgb(232,236,222)',
+  fwd: 'rgb(235,120,120)',
+};
 
 // --- palette (clean custom retro, not a pixel-exact SWOS clone) -------------
 const BG = 'rgb(22,56,30)';
@@ -64,6 +89,13 @@ export function makeApp(deps: AppDeps): App {
   let session: Session | null = null;
   let pendingMode: ControlMode = '1p';
 
+  // Match setup carried across the friendly screens.
+  let awayTeam: TeamDef | null = null;
+  let homeFormation: FormationId = DEFAULT_FORMATION;
+  let awayFormation: FormationId = DEFAULT_FORMATION;
+  const options: MatchOptions = { ...DEFAULT_OPTIONS };
+  let optCursor = 0; // which Options row is active (0 = length, 1 = pitch)
+
   const mainMenu = makeList(MAIN_ITEMS, MAIN_ENABLED);
   const friendly = makeList(FRIENDLY_ITEMS);
   const ts: TeamSelectState = {
@@ -73,6 +105,9 @@ export function makeApp(deps: AppDeps): App {
     home: null,
     list: makeList([...CONTINENTS]),
   };
+  const pm: PreMatchState = { queue: [], index: 0, formIdx: 0 };
+
+  const sideFormation = (side: 0 | 1): FormationId => (side === 0 ? homeFormation : awayFormation);
 
   function nav(list: ListView, up: boolean, down: boolean): void {
     if (up && listMove(list, -1)) emitSfx('uiMove');
@@ -83,12 +118,40 @@ export function makeApp(deps: AppDeps): App {
     ts.picking = 'home';
     ts.level = 'continent';
     ts.home = null;
+    awayTeam = null;
+    homeFormation = DEFAULT_FORMATION;
+    awayFormation = DEFAULT_FORMATION;
     ts.list = makeList([...CONTINENTS]);
     screen = 'teamSelect';
   }
 
-  function launchMatch(home: TeamDef, away: TeamDef): void {
-    session = makeSession({ home, away, controlMode: pendingMode });
+  // After both teams are chosen, each human side picks a formation; CPU sides
+  // keep the default. With no human sides (CPU v CPU) we launch straight away.
+  function beginPreMatch(): void {
+    const queue: (0 | 1)[] = [];
+    if (pendingMode !== 'cpu') queue.push(0); // home is P1
+    if (pendingMode === '2p') queue.push(1); // away is P2
+    if (queue.length === 0) {
+      launchMatch();
+      return;
+    }
+    pm.queue = queue;
+    pm.index = 0;
+    pm.formIdx = FORMATION_IDS.indexOf(sideFormation(queue[0]));
+    screen = 'preMatch';
+  }
+
+  function launchMatch(): void {
+    if (!ts.home || !awayTeam) return;
+    session = makeSession({
+      home: ts.home,
+      away: awayTeam,
+      controlMode: pendingMode,
+      homeFormation,
+      awayFormation,
+      halfLength: MATCH_LENGTHS[options.lengthIndex].half,
+      pitch: PITCHES[options.pitchIndex],
+    });
     clearActionEdges(); // don't let the confirming keypress leak in as a kick
     screen = 'match';
     emitSfx('uiSelect');
@@ -109,9 +172,13 @@ export function makeApp(deps: AppDeps): App {
     nav(mainMenu, m.up, m.down);
     if (m.confirm && mainMenu.enabled[mainMenu.cursor]) {
       emitSfx('uiSelect');
-      if (mainMenu.items[mainMenu.cursor] === 'FRIENDLY') {
+      const label = mainMenu.items[mainMenu.cursor];
+      if (label === 'FRIENDLY') {
         friendly.cursor = 0;
         screen = 'friendlySetup';
+      } else if (label === 'OPTIONS') {
+        optCursor = 0;
+        screen = 'options';
       }
     }
     if (m.back) screen = 'title';
@@ -165,7 +232,74 @@ export function makeApp(deps: AppDeps): App {
       ts.level = 'continent';
       ts.list = makeList([...CONTINENTS]);
     } else if (ts.home) {
-      launchMatch(ts.home, chosen);
+      awayTeam = chosen;
+      beginPreMatch();
+    }
+  }
+
+  function updatePreMatch(): void {
+    const m = consumeMenuInput();
+    const n = FORMATION_IDS.length;
+    if (m.up || m.left) {
+      pm.formIdx = (pm.formIdx - 1 + n) % n;
+      emitSfx('uiMove');
+    }
+    if (m.down || m.right) {
+      pm.formIdx = (pm.formIdx + 1) % n;
+      emitSfx('uiMove');
+    }
+    if (m.back) {
+      emitSfx('uiSelect');
+      if (pm.index === 0) {
+        // Step back to re-pick the away team.
+        ts.picking = 'away';
+        ts.level = 'continent';
+        ts.list = makeList([...CONTINENTS]);
+        screen = 'teamSelect';
+      } else {
+        pm.index--;
+        pm.formIdx = FORMATION_IDS.indexOf(sideFormation(pm.queue[pm.index]));
+      }
+      return;
+    }
+    if (m.confirm) {
+      emitSfx('uiSelect');
+      const id = FORMATION_IDS[pm.formIdx];
+      if (pm.queue[pm.index] === 0) homeFormation = id;
+      else awayFormation = id;
+      pm.index++;
+      if (pm.index >= pm.queue.length) {
+        launchMatch();
+      } else {
+        pm.formIdx = FORMATION_IDS.indexOf(sideFormation(pm.queue[pm.index]));
+      }
+    }
+  }
+
+  function updateOptions(): void {
+    const m = consumeMenuInput();
+    if (m.up && optCursor > 0) {
+      optCursor--;
+      emitSfx('uiMove');
+    }
+    if (m.down && optCursor < 1) {
+      optCursor++;
+      emitSfx('uiMove');
+    }
+    const delta = (m.left ? -1 : 0) + (m.right ? 1 : 0);
+    if (delta !== 0) {
+      if (optCursor === 0) {
+        const len = MATCH_LENGTHS.length;
+        options.lengthIndex = (options.lengthIndex + delta + len) % len;
+      } else {
+        const len = PITCHES.length;
+        options.pitchIndex = (options.pitchIndex + delta + len) % len;
+      }
+      emitSfx('uiMove');
+    }
+    if (m.back || m.confirm) {
+      emitSfx('uiSelect');
+      screen = 'mainMenu';
     }
   }
 
@@ -262,6 +396,54 @@ export function makeApp(deps: AppDeps): App {
     drawTextCentered(ctx, 'ESC BACK', 0, VIEW_W, VIEW_H - 14, SUBTLE, 1);
   }
 
+  // A mini own-half diagram: the team attacks upward, so the keeper sits at the
+  // bottom (own goal) and forwards near the top. slot.y is depth into the own
+  // half (0 = own goal line).
+  function drawFormationDiagram(slots: Slot[], cx: number, topY: number, w: number, h: number): void {
+    const left = Math.round(cx - w / 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(left - 2, topY - 2, w + 4, h + 4);
+    ctx.fillStyle = 'rgb(30,80,42)';
+    ctx.fillRect(left, topY, w, h);
+    ctx.fillStyle = ACCENT;
+    ctx.fillRect(left, topY, w, 1); // halfway line (top edge)
+    for (const s of slots) {
+      const px = Math.round(left + s.x * w);
+      const py = Math.round(topY + h - s.y * h);
+      ctx.fillStyle = ROLE_DOT[s.role];
+      ctx.fillRect(px - 1, py - 1, 3, 3);
+    }
+  }
+
+  function drawPreMatch(): void {
+    drawBackdrop();
+    const side = pm.queue[pm.index];
+    const team = side === 0 ? ts.home : awayTeam;
+    drawHeader(team ? team.name : 'FORMATION');
+    drawTextCentered(ctx, side === 0 ? 'PLAYER 1' : 'PLAYER 2', 0, VIEW_W, 32, SUBTLE, 1);
+    const id = FORMATION_IDS[pm.formIdx];
+    drawTextCentered(ctx, `< ${FORMATION_NAMES[id]} >`, 0, VIEW_W, 50, DEFAULT_STYLE.hi, 2);
+    drawFormationDiagram(FORMATIONS[id], VIEW_W / 2, 84, 96, 120);
+    drawTextCentered(ctx, 'SPACE START   ESC BACK', 0, VIEW_W, VIEW_H - 14, SUBTLE, 1);
+  }
+
+  function drawOptions(): void {
+    drawBackdrop();
+    drawHeader('OPTIONS');
+    const rows = [
+      { label: 'MATCH LENGTH', value: MATCH_LENGTHS[options.lengthIndex].label },
+      { label: 'PITCH', value: PITCHES[options.pitchIndex].name },
+    ];
+    let y = 84;
+    for (let i = 0; i < rows.length; i++) {
+      const active = i === optCursor;
+      drawTextCentered(ctx, rows[i].label, 0, VIEW_W, y, active ? DEFAULT_STYLE.hi : DEFAULT_STYLE.on, 2);
+      drawTextCentered(ctx, `< ${rows[i].value} >`, 0, VIEW_W, y + 22, active ? DEFAULT_STYLE.hi : SUBTLE, 2);
+      y += 64;
+    }
+    drawTextCentered(ctx, 'ARROWS CHANGE   ESC BACK', 0, VIEW_W, VIEW_H - 14, SUBTLE, 1);
+  }
+
   function drawMatch(alpha: number): void {
     if (!session) return;
     renderMatch(session, alpha);
@@ -290,6 +472,12 @@ export function makeApp(deps: AppDeps): App {
         case 'teamSelect':
           updateTeamSelect();
           break;
+        case 'preMatch':
+          updatePreMatch();
+          break;
+        case 'options':
+          updateOptions();
+          break;
         case 'match':
           updateMatch(dt);
           break;
@@ -313,6 +501,12 @@ export function makeApp(deps: AppDeps): App {
           break;
         case 'teamSelect':
           drawTeamSelect();
+          break;
+        case 'preMatch':
+          drawPreMatch();
+          break;
+        case 'options':
+          drawOptions();
           break;
       }
     },

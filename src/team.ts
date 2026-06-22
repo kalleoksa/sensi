@@ -3,7 +3,7 @@
 // world coords on the player; the AI shifts them toward the ball during play.
 
 import { makePlayer, type PlayerInit } from './player';
-import type { Player, Role } from './state';
+import type { Player } from './state';
 import type { Rng } from './rng';
 import {
   FIELD_T,
@@ -14,27 +14,7 @@ import {
 } from './world';
 import { HAIR_DARK, HAIR_BLOND, HAIR_GINGER, type RGB } from './sprites/palette';
 import { type TeamDef, DEFAULT_GK_KIT } from './teams/data';
-
-interface Slot {
-  x: number; // fraction across pitch width (0..1)
-  y: number; // fraction of own half depth from own goal line (0..1)
-  role: Role;
-}
-
-// 4-3-3.
-const FORMATION: Slot[] = [
-  { x: 0.5, y: 0.04, role: 'gk' },
-  { x: 0.18, y: 0.2, role: 'def' },
-  { x: 0.39, y: 0.16, role: 'def' },
-  { x: 0.61, y: 0.16, role: 'def' },
-  { x: 0.82, y: 0.2, role: 'def' },
-  { x: 0.3, y: 0.46, role: 'mid' },
-  { x: 0.5, y: 0.42, role: 'mid' },
-  { x: 0.7, y: 0.46, role: 'mid' },
-  { x: 0.26, y: 0.72, role: 'fwd' },
-  { x: 0.5, y: 0.78, role: 'fwd' },
-  { x: 0.74, y: 0.72, role: 'fwd' },
-];
+import { FORMATIONS, type FormationId, type Slot } from './formations';
 
 const HAIRS: RGB[] = [HAIR_DARK, HAIR_DARK, HAIR_BLOND, HAIR_GINGER];
 
@@ -52,8 +32,8 @@ export function homeForSlot(
   return { x, y };
 }
 
-function makeTeam(team: 0 | 1, def: TeamDef, rng: Rng): Player[] {
-  return FORMATION.map((slot) => {
+function makeTeam(team: 0 | 1, def: TeamDef, slots: Slot[], rng: Rng): Player[] {
+  return slots.map((slot) => {
     const kit = slot.role === 'gk' ? def.gkKit ?? DEFAULT_GK_KIT : def.kit;
     // Half-1 placement: team 0 attacks the top, team 1 the bottom.
     const home = homeForSlot(slot.x, slot.y, team === 0);
@@ -79,6 +59,15 @@ function makeTeam(team: 0 | 1, def: TeamDef, rng: Rng): Player[] {
 }
 
 // Build both teams: home is team 0 (attacks the top in half 1), away is team 1.
-export function makeTeams(rng: Rng, home: TeamDef, away: TeamDef): Player[] {
-  return [...makeTeam(0, home, rng), ...makeTeam(1, away, rng)];
+export function makeTeams(
+  rng: Rng,
+  home: TeamDef,
+  away: TeamDef,
+  homeFormation: FormationId,
+  awayFormation: FormationId,
+): Player[] {
+  return [
+    ...makeTeam(0, home, FORMATIONS[homeFormation], rng),
+    ...makeTeam(1, away, FORMATIONS[awayFormation], rng),
+  ];
 }
