@@ -12,15 +12,8 @@ import {
   PLAY_W,
   PLAY_H,
 } from './world';
-import {
-  KIT_RED,
-  KIT_BLUE,
-  WHITE,
-  HAIR_DARK,
-  HAIR_BLOND,
-  HAIR_GINGER,
-  type RGB,
-} from './sprites/palette';
+import { HAIR_DARK, HAIR_BLOND, HAIR_GINGER, type RGB } from './sprites/palette';
+import { type TeamDef, DEFAULT_GK_KIT } from './teams/data';
 
 interface Slot {
   x: number; // fraction across pitch width (0..1)
@@ -45,20 +38,6 @@ const FORMATION: Slot[] = [
 
 const HAIRS: RGB[] = [HAIR_DARK, HAIR_DARK, HAIR_BLOND, HAIR_GINGER];
 
-interface Kit {
-  shirt: RGB;
-  shorts: RGB;
-  socks: RGB;
-}
-
-const KITS: Record<0 | 1, Kit> = {
-  0: { shirt: KIT_RED, shorts: WHITE, socks: KIT_RED },
-  1: { shirt: KIT_BLUE, shorts: WHITE, socks: KIT_BLUE },
-};
-
-// Keepers wear a distinct kit (green) so they read apart from outfielders.
-const GK_KIT: Kit = { shirt: [40, 150, 78], shorts: [28, 30, 28], socks: [28, 30, 28] };
-
 // World-space formation home for a slot, given which goal the team attacks this
 // half. slotY is depth into the team's OWN half (0 = own goal line). A team that
 // attacks the top defends the bottom, so its own half is the bottom half.
@@ -73,9 +52,9 @@ export function homeForSlot(
   return { x, y };
 }
 
-function makeTeam(team: 0 | 1, rng: Rng): Player[] {
+function makeTeam(team: 0 | 1, def: TeamDef, rng: Rng): Player[] {
   return FORMATION.map((slot) => {
-    const kit = slot.role === 'gk' ? GK_KIT : KITS[team];
+    const kit = slot.role === 'gk' ? def.gkKit ?? DEFAULT_GK_KIT : def.kit;
     // Half-1 placement: team 0 attacks the top, team 1 the bottom.
     const home = homeForSlot(slot.x, slot.y, team === 0);
     const init: PlayerInit = {
@@ -99,6 +78,7 @@ function makeTeam(team: 0 | 1, rng: Rng): Player[] {
   });
 }
 
-export function makeTeams(rng: Rng): Player[] {
-  return [...makeTeam(0, rng), ...makeTeam(1, rng)];
+// Build both teams: home is team 0 (attacks the top in half 1), away is team 1.
+export function makeTeams(rng: Rng, home: TeamDef, away: TeamDef): Player[] {
+  return [...makeTeam(0, home, rng), ...makeTeam(1, away, rng)];
 }

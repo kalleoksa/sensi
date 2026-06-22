@@ -8,6 +8,7 @@ import { VIEW_W, VIEW_H } from './world';
 import type { BakedPitch } from './sprites/pitch_gen';
 import { buildAtlas, spriteFor, runFrame, CELL_W, CELL_H } from './sprites/player_gen';
 import { css, SHADOW, WHITE } from './sprites/palette';
+import { drawText, measure } from './sprites/font';
 
 // Where the feet sit inside a sprite cell (anchor for world placement).
 const FEET_X = 6;
@@ -15,50 +16,6 @@ const FEET_Y = 13;
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
-}
-
-// 3x5 pixel font (rows top->bottom), for the score HUD and overlays.
-const DIGITS: Record<string, string[]> = {
-  '0': ['111', '101', '101', '101', '111'],
-  '1': ['010', '110', '010', '010', '111'],
-  '2': ['111', '001', '111', '100', '111'],
-  '3': ['111', '001', '111', '001', '111'],
-  '4': ['101', '101', '111', '001', '001'],
-  '5': ['111', '100', '111', '001', '111'],
-  '6': ['111', '100', '111', '101', '111'],
-  '7': ['111', '001', '010', '010', '010'],
-  '8': ['111', '101', '111', '101', '111'],
-  '9': ['111', '101', '111', '001', '111'],
-  '-': ['000', '000', '111', '000', '000'],
-  ':': ['000', '010', '000', '010', '000'],
-  A: ['010', '101', '111', '101', '101'],
-  D: ['110', '101', '101', '101', '110'],
-  E: ['111', '100', '111', '100', '111'],
-  F: ['111', '100', '111', '100', '100'],
-  H: ['101', '101', '111', '101', '101'],
-  I: ['111', '010', '010', '010', '111'],
-  L: ['100', '100', '100', '100', '111'],
-  M: ['101', '111', '111', '101', '101'],
-  P: ['111', '101', '111', '100', '100'],
-  S: ['111', '100', '111', '001', '111'],
-  T: ['111', '010', '010', '010', '010'],
-  U: ['101', '101', '101', '101', '111'],
-};
-
-function drawText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string): void {
-  ctx.fillStyle = color;
-  let cx = x;
-  for (const ch of text) {
-    const glyph = DIGITS[ch];
-    if (glyph) {
-      for (let r = 0; r < glyph.length; r++) {
-        for (let c = 0; c < 3; c++) {
-          if (glyph[r][c] === '1') ctx.fillRect(cx + c, y + r, 1, 1);
-        }
-      }
-    }
-    cx += 4; // 3px glyph + 1px gap
-  }
 }
 
 function drawPlayer(
@@ -218,20 +175,20 @@ export function makeRenderer(
     // 6. Score HUD, top-left corner (out of the way of the goals when the
     // camera pans to either end): "T0 - T1". Flashes yellow just after a goal.
     const scoreText = `${match.score[0]}-${match.score[1]}`;
-    const tw = scoreText.length * 4 - 1;
+    const tw = measure(scoreText);
     const tx = 4;
     const ty = 4;
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(tx - 2, ty - 2, tw + 4, 9);
+    ctx.fillRect(tx - 2, ty - 2, tw + 4, 11);
     drawText(ctx, scoreText, tx, ty, match.flash > 0 ? 'rgb(250,230,90)' : 'rgb(236,240,226)');
 
     // 6b. Match clock, just right of the score: m:ss of the time remaining.
     const secs = Math.max(0, Math.ceil(match.clock));
     const clockText = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-    const cw = clockText.length * 4 - 1;
+    const cw = measure(clockText);
     const clx = tx + tw + 5;
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(clx - 2, ty - 2, cw + 4, 9);
+    ctx.fillRect(clx - 2, ty - 2, cw + 4, 11);
     drawText(ctx, clockText, clx, ty, 'rgb(236,240,226)');
 
     // 7. Centered overlays (dim the pitch): kickoff/half/full-time and pause.
@@ -243,8 +200,8 @@ export function makeRenderer(
     if (overlay) {
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-      const ww = overlay.length * 4 - 1;
-      drawText(ctx, overlay, Math.round((VIEW_W - ww) / 2), Math.round(VIEW_H / 2 - 2), 'rgb(245,245,235)');
+      const ww = measure(overlay, 2);
+      drawText(ctx, overlay, Math.round((VIEW_W - ww) / 2), Math.round(VIEW_H / 2 - 7), 'rgb(245,245,235)', 2);
     }
   };
 }

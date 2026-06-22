@@ -17,7 +17,9 @@ export type SfxName =
   | 'whistleKick'
   | 'whistleGoal'
   | 'whistleOut'
-  | 'goal';
+  | 'goal'
+  | 'uiMove'
+  | 'uiSelect';
 
 interface SfxEvent {
   name: SfxName;
@@ -38,6 +40,8 @@ const MIN_INTERVAL: Record<SfxName, number> = {
   whistleGoal: 0.5,
   whistleOut: 0.4,
   goal: 1,
+  uiMove: 0.04,
+  uiSelect: 0.06,
 };
 
 const VOLUME_KEY = 'sensi.volume';
@@ -213,6 +217,13 @@ function play(e: SfxEvent, t: number): void {
     case 'goal':
       roar(t);
       whistle(t + 0.15, 3);
+      break;
+    case 'uiMove':
+      tick(t, 880, 0.03, g * 0.3, 'bandpass');
+      break;
+    case 'uiSelect':
+      tick(t, 1320, 0.04, g * 0.4, 'bandpass');
+      tick(t + 0.04, 1760, 0.05, g * 0.35, 'bandpass');
       break;
   }
 }
