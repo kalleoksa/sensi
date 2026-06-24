@@ -590,8 +590,9 @@ export function makeApp(deps: AppDeps): App {
     }
 
     if (ts.level === 'team') {
-      // Compact rows so the tallest group (8 teams) clears the kit preview.
-      drawList(ctx, ts.list, VIEW_W / 2, 50, TEAM_STYLE);
+      // Compact rows + a scrolling window so the largest group (Europe, 18)
+      // clears the kit preview below.
+      drawList(ctx, ts.list, VIEW_W / 2, 58, TEAM_STYLE, 10);
       const team = teamsIn(CONTINENTS[ts.continent])[ts.list.cursor];
       if (team) {
         const sw = 3 * 16 + 2 * 5;

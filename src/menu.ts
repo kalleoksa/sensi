@@ -63,20 +63,31 @@ export function listHeight(v: ListView, style: ListStyle = DEFAULT_STYLE): numbe
 }
 
 // Draw the list with its labels horizontally centered on `centerX`. The
-// highlighted row gets a small '>' marker to its left.
+// highlighted row gets a small '>' marker to its left. When `maxVisible` is set
+// and the list is longer, only a window of rows around the cursor is drawn, with
+// small chevrons indicating more rows above / below.
 export function drawList(
   ctx: CanvasRenderingContext2D,
   v: ListView,
   centerX: number,
   topY: number,
   style: ListStyle = DEFAULT_STYLE,
+  maxVisible?: number,
 ): void {
   const row = GLYPH_H * style.scale + style.lineGap;
-  for (let i = 0; i < v.items.length; i++) {
+  const n = v.items.length;
+  const windowed = maxVisible != null && n > maxVisible;
+  let start = 0;
+  let end = n;
+  if (windowed) {
+    start = Math.min(Math.max(0, v.cursor - Math.floor(maxVisible / 2)), n - maxVisible);
+    end = start + maxVisible;
+  }
+  for (let i = start; i < end; i++) {
     const label = v.items[i];
     const w = measure(label, style.scale);
     const x = Math.round(centerX - w / 2);
-    const y = topY + i * row;
+    const y = topY + (i - start) * row;
     const color = !v.enabled[i] ? style.off : i === v.cursor ? style.hi : style.on;
     drawText(ctx, label, x, y, color, style.scale);
     if (i === v.cursor) {
@@ -88,6 +99,25 @@ export function drawList(
       ctx.fillStyle = style.marker;
       for (let r = 0; r < widths.length; r++) {
         ctx.fillRect(mx, my + r * s, widths[r] * s, s);
+      }
+    }
+  }
+  // More-above / more-below chevrons when the window is clipping the list.
+  if (windowed) {
+    const s = style.scale;
+    ctx.fillStyle = style.marker;
+    if (start > 0) {
+      const ay = topY - 4 * s; // up chevron above the first visible row
+      const up = [1, 3, 5];
+      for (let r = 0; r < up.length; r++) {
+        ctx.fillRect(Math.round(centerX - (up[r] * s) / 2), ay + r * s, up[r] * s, s);
+      }
+    }
+    if (end < n) {
+      const by = topY + (end - start) * row - style.lineGap + s; // below the last row
+      const down = [5, 3, 1];
+      for (let r = 0; r < down.length; r++) {
+        ctx.fillRect(Math.round(centerX - (down[r] * s) / 2), by + r * s, down[r] * s, s);
       }
     }
   }
