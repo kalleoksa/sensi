@@ -27,6 +27,8 @@ const CONTROL_R = 13; // within this, a player is "near" the ball
 const DRIBBLE_LEAD = 6; // ball is kept this far ahead of the carrier's feet
 const DRIBBLE_SPRING = 11; // how hard the ball is held to the lead point
 const TACKLE_R = 8; // an opponent this close to the carrier pokes the ball loose
+const SLIDE_BALL_R = 11; // a slide within this of the ball wins it cleanly
+const SLIDE_HIT_R = 9; // a slide within this of an opponent makes contact
 
 // Kick tuning.
 const TAP_CHARGE = 0.16; // below this hold time, it's a pass not a shot
@@ -262,24 +264,44 @@ export function resolveHeaders(state: GameState): void {
   emitSfx('pass', 0.7);
 }
 
-// Slide tackles knock down opponents they slide into: the opponent falls
-// (locked), and a carrier loses the ball.
+// Slide challenges, classified by what the slide reaches first. If the slider
+// is on the BALL (wonBall) it's a CLEAN tackle: the ball is poked loose along
+// the slide and the opponent keeps his feet. If it only catches the PLAYER it's
+// a FOUL: the opponent is knocked down and the referee is flagged (state.foul)
+// to award a free kick to the fouled team.
 export function resolveSlideTackles(state: GameState): void {
+  const b = state.ball;
   for (const s of state.players) {
     if (s.state !== 'slide') continue;
+    const wonBall = Math.hypot(s.x - b.x, s.y - b.y) < SLIDE_BALL_R;
     for (const o of state.players) {
       if (o.team === s.team || o === s || o.state === 'fallen') continue;
-      if (Math.hypot(o.x - s.x, o.y - s.y) < 9) {
+      if (Math.hypot(o.x - s.x, o.y - s.y) >= SLIDE_HIT_R) continue;
+
+      if (wonBall) {
+        // Clean: win the ball and knock it loose in the slide's direction.
+        const [ox, oy] = DIR_VEC[s.dir];
+        b.vx = ox * 150;
+        b.vy = oy * 150;
+        b.vz = 0;
+        b.controlLock = 0.18;
+        b.owner = s;
+        if (state.carrier === o) state.carrier = null;
+        emitSfx('tackle', 0.7);
+      } else {
+        // Foul: knock the opponent down and flag it for the referee.
         o.state = 'fallen';
         o.stateTimer = FALLEN_LOCK;
-        emitSfx('tackle');
         o.vx = 0;
         o.vy = 0;
         if (state.carrier === o) {
           state.carrier = null;
           state.ball.controlLock = 0.2;
         }
+        if (!state.foul) state.foul = { team: o.team, x: o.x, y: o.y };
+        emitSfx('tackle');
       }
+      break; // this slide is resolved by its first contact
     }
   }
 }

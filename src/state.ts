@@ -114,4 +114,8 @@ export interface GameState {
   controlled: Player | null;
   // Second local player's controlled team-1 player (null in one-player mode).
   controlled2: Player | null;
+  // Raised by a foul (mistimed slide that hits the player, not the ball); the
+  // referee (updateMatch) consumes it to award a free kick to `team`, then
+  // clears it. Location is where the foul happened.
+  foul: { team: 0 | 1; x: number; y: number } | null;
 }
