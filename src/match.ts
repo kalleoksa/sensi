@@ -240,11 +240,52 @@ function placeRestart(
   taker.vx = taker.vy = 0;
   taker.state = 'idle';
 
+  // A corner is a set piece: push the attackers into the box and drop the
+  // defenders in to mark, so the cross has targets at both ends.
+  if (kind === 'corner') positionForCorner(state, team, y, taker);
+
   match.phase = 'dead';
   match.deadTimer = RESTART_DEAD;
   match.deadReset = false;
   match.restart = { kind, taker };
   emitSfx('whistleOut');
+}
+
+// Lay players out for a corner: the attacking outfielders fill the box, the
+// defenders mark goal-side of them, and the defending keeper sits on his line.
+function positionForCorner(state: GameState, attackTeam: 0 | 1, cornerY: number, taker: Player): void {
+  const top = cornerY < (FIELD_T + FIELD_B) / 2;
+  const goalLine = top ? FIELD_T : FIELD_B;
+  const into = top ? 1 : -1; // from the goal line into the field
+  const place = (p: Player, px: number, py: number): void => {
+    p.x = Math.max(FIELD_L + 4, Math.min(FIELD_R - 4, px));
+    p.y = py;
+    p.prevX = p.x;
+    p.prevY = p.y;
+    p.vx = p.vy = 0;
+    p.state = 'idle';
+  };
+  // Box targets: [x offset from centre, depth from the goal line].
+  const spots: Array<[number, number]> = [
+    [-52, 16], [52, 20], [-18, 30], [20, 38], [0, 50], [-78, 40], [78, 40],
+  ];
+  const edge: Array<[number, number]> = [[-30, 70], [34, 72]];
+  const attackers = state.players.filter(
+    (p) => p.team === attackTeam && p.role !== 'gk' && p !== taker && !p.sentOff,
+  );
+  attackers.forEach((p, i) => {
+    const s = i < spots.length ? spots[i] : edge[(i - spots.length) % edge.length];
+    place(p, CX + s[0], goalLine + into * s[1]);
+  });
+  const defenders = state.players.filter(
+    (p) => p.team !== attackTeam && p.role !== 'gk' && !p.sentOff,
+  );
+  defenders.forEach((p, i) => {
+    const s = spots[i % spots.length];
+    place(p, CX + s[0] * 0.8, goalLine + into * Math.max(6, s[1] * 0.6));
+  });
+  const gk = state.players.find((p) => p.team !== attackTeam && p.role === 'gk' && !p.sentOff);
+  if (gk) place(gk, CX, goalLine + into * 8);
 }
 
 // Whether (x,y) is inside the penalty box in front of the goal `attacksTop`
