@@ -34,6 +34,8 @@ import {
   advance,
   leagueTable,
   cupRoundName,
+  groupTable,
+  wcGroupOf,
   type Competition,
   type CompetitionKind,
 } from './competition';
@@ -55,8 +57,8 @@ type AppScreen =
 const POSTMATCH_ITEMS = ['PLAY AGAIN', 'MAIN MENU'];
 const FULLTIME_HOLD = 3; // seconds the FULL TIME overlay holds before the result screen
 
-const MAIN_ITEMS = ['FRIENDLY', 'CUP', 'LEAGUE', 'SPECIALS', 'OPTIONS', 'EDIT TEAMS'];
-const MAIN_ENABLED = [true, true, true, false, true, false];
+const MAIN_ITEMS = ['FRIENDLY', 'WORLD CUP', 'CUP', 'LEAGUE', 'SPECIALS', 'OPTIONS', 'EDIT TEAMS'];
+const MAIN_ENABLED = [true, true, true, true, false, true, false];
 
 const FRIENDLY_ITEMS = ['1 PLAYER', '2 PLAYERS', 'CPU V CPU'];
 const FRIENDLY_MODES: ControlMode[] = ['1p', '2p', 'cpu'];
@@ -199,6 +201,15 @@ export function makeApp(deps: AppDeps): App {
     screen = 'teamSelect';
   }
 
+  // Teams shown for the current browse: the World Cup restricts to the 48 in the
+  // field (those with a group); everything else browses the full pool.
+  function browseTeams(continentIndex: number): TeamDef[] {
+    const all = teamsIn(CONTINENTS[continentIndex]);
+    return tsPurpose === 'competition' && pendingComp === 'worldcup'
+      ? all.filter((t) => t.group !== undefined)
+      : all;
+  }
+
   // Begin the player's match for the current competition fixture.
   function playCompMatch(): void {
     if (!competition) return;
@@ -263,6 +274,8 @@ export function makeApp(deps: AppDeps): App {
       if (label === 'FRIENDLY') {
         friendly.cursor = 0;
         screen = 'friendlySetup';
+      } else if (label === 'WORLD CUP') {
+        enterCompetition('worldcup');
       } else if (label === 'CUP') {
         enterCompetition('cup');
       } else if (label === 'LEAGUE') {
@@ -312,11 +325,11 @@ export function makeApp(deps: AppDeps): App {
     if (ts.level === 'continent') {
       ts.continent = ts.list.cursor;
       ts.level = 'team';
-      ts.list = makeList(teamsIn(CONTINENTS[ts.continent]).map((t) => t.name));
+      ts.list = makeList(browseTeams(ts.continent).map((t) => t.name));
       return;
     }
     // Team level: a nation was chosen.
-    const chosen = teamsIn(CONTINENTS[ts.continent])[ts.list.cursor];
+    const chosen = browseTeams(ts.continent)[ts.list.cursor];
     if (tsPurpose === 'competition') {
       competition = makeCompetition(pendingComp, [...TEAMS], chosen, Date.now() >>> 0);
       pendingMode = '1p';
@@ -593,7 +606,7 @@ export function makeApp(deps: AppDeps): App {
       // Compact rows + a scrolling window so the largest group (Europe, 18)
       // clears the kit preview below.
       drawList(ctx, ts.list, VIEW_W / 2, 58, TEAM_STYLE, 10);
-      const team = teamsIn(CONTINENTS[ts.continent])[ts.list.cursor];
+      const team = browseTeams(ts.continent)[ts.list.cursor];
       if (team) {
         const sw = 3 * 16 + 2 * 5;
         drawSwatch(team.kit, Math.round((VIEW_W - sw) / 2), VIEW_H - 64);
@@ -692,6 +705,29 @@ export function makeApp(deps: AppDeps): App {
     }
   }
 
+  // The player's World Cup group: 4-team standings, top 2 highlighted (they
+  // qualify; a strong 3rd can too via best-thirds, shown at full time).
+  function drawGroupTable(comp: Competition, teams: TeamDef[]): void {
+    const table = groupTable(comp, teams);
+    const x = { pos: 44, team: 66, p: 244, gd: 286, pts: 338 };
+    text1('P', x.p, 50, SUBTLE);
+    text1('GD', x.gd, 50, SUBTLE);
+    text1('PTS', x.pts, 50, SUBTLE);
+    let y = 66;
+    for (let i = 0; i < table.length; i++) {
+      const r = table[i];
+      const mine = r.team.id === comp.you.id;
+      const c = mine ? DEFAULT_STYLE.hi : i < 2 ? DEFAULT_STYLE.on : SUBTLE;
+      const gd = r.gf - r.ga;
+      text1(`${i + 1}`, x.pos, y, c);
+      text1(r.team.short, x.team, y, c);
+      text1(`${r.p}`, x.p, y, c);
+      text1(`${gd > 0 ? '+' : ''}${gd}`, x.gd, y, c);
+      text1(`${r.pts}`, x.pts, y, c);
+      y += 14;
+    }
+  }
+
   function drawCupRound(comp: Competition): void {
     const ties = comp.rounds[comp.roundIndex] ?? [];
     let y = 56;
@@ -714,6 +750,11 @@ export function makeApp(deps: AppDeps): App {
       drawHeader('LEAGUE');
       drawTextCentered(ctx, `ROUND ${competition.roundIndex + 1} / ${competition.rounds.length}`, 0, VIEW_W, 28, SUBTLE, 1);
       drawLeagueTable(competition);
+    } else if (competition.kind === 'worldcup') {
+      drawHeader('WORLD CUP');
+      drawTextCentered(ctx, `GROUP ${competition.you.group ?? ''}   MATCH ${competition.roundIndex + 1} / 3`, 0, VIEW_W, 28, SUBTLE, 1);
+      const grp = wcGroupOf(competition, competition.you);
+      if (grp) drawGroupTable(competition, grp);
     } else {
       drawHeader('CUP');
       drawTextCentered(ctx, cupRoundName(competition), 0, VIEW_W, 28, SUBTLE, 1);
@@ -729,11 +770,20 @@ export function makeApp(deps: AppDeps): App {
   function drawCompResults(): void {
     if (!competition) return;
     drawBackdrop();
+    const grp = competition.kind === 'worldcup' ? wcGroupOf(competition, competition.you) : null;
     const title =
-      competition.kind === 'cup' ? `${cupRoundName(competition)} RESULTS` : `ROUND ${competition.roundIndex + 1} RESULTS`;
+      competition.kind === 'cup'
+        ? `${cupRoundName(competition)} RESULTS`
+        : competition.kind === 'worldcup'
+          ? `GROUP ${competition.you.group ?? ''}   MATCH ${competition.roundIndex + 1}`
+          : `ROUND ${competition.roundIndex + 1} RESULTS`;
     drawHeader('RESULTS');
     drawTextCentered(ctx, title, 0, VIEW_W, 28, SUBTLE, 1);
-    const round = competition.rounds[competition.roundIndex] ?? [];
+    const all = competition.rounds[competition.roundIndex] ?? [];
+    // World Cup: show only the player's own group's two games this matchday.
+    const round = grp
+      ? all.filter((f) => grp.some((t) => t.id === f.a.id) && grp.some((t) => t.id === f.b.id))
+      : all;
     let y = 48;
     for (const f of round) {
       const mine = f.a === competition.you || f.b === competition.you;
@@ -751,7 +801,16 @@ export function makeApp(deps: AppDeps): App {
     drawBackdrop();
     drawHeader('FULL TIME');
     const won = competition.champion === competition.you;
-    if (competition.kind === 'cup') {
+    if (competition.kind === 'worldcup') {
+      const you = competition.you;
+      const grp = wcGroupOf(competition, you);
+      const pos = grp ? groupTable(competition, grp).findIndex((r) => r.team.id === you.id) + 1 : 0;
+      const ord = ['', '1ST', '2ND', '3RD', '4TH'][pos] ?? `${pos}TH`;
+      const qualified = !competition.youOut;
+      drawTextCentered(ctx, qualified ? 'QUALIFIED!' : 'GROUP STAGE EXIT', 0, VIEW_W, 84, DEFAULT_STYLE.hi, qualified ? 3 : 2);
+      drawTextCentered(ctx, `GROUP ${competition.you.group ?? ''}  -  ${ord}`, 0, VIEW_W, 128, DEFAULT_STYLE.on, 2);
+      if (qualified) drawTextCentered(ctx, 'THROUGH TO THE LAST 32', 0, VIEW_W, 156, SUBTLE, 1);
+    } else if (competition.kind === 'cup') {
       if (won) {
         drawTextCentered(ctx, 'CUP WINNERS!', 0, VIEW_W, 80, DEFAULT_STYLE.hi, 3);
         drawTextCentered(ctx, competition.you.name, 0, VIEW_W, 120, DEFAULT_STYLE.on, 2);

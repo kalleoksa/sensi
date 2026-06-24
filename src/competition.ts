@@ -10,10 +10,12 @@
 //           coin-flip here). Win the final to be champion; lose any tie and your
 //           run is over.
 
-import type { TeamDef } from './teams/data';
+import { GROUPS, type TeamDef } from './teams/data';
 import { makeRng, type Rng } from './rng';
 
-export type CompetitionKind = 'league' | 'cup';
+export type CompetitionKind = 'league' | 'cup' | 'worldcup';
+
+const WC_GROUP_ROUNDS = 3; // matchdays in a 4-team group round-robin
 
 // A single match. `a` and `b` are the two teams; for the player's own fixture we
 // always orient `a` = you. winner is set when resolved (cup; or league for info).
@@ -45,6 +47,7 @@ export interface Competition {
   done: boolean;
   champion: TeamDef | null; // set when finished (null if you were knocked out)
   youOut: boolean; // cup: eliminated before the final
+  groups: TeamDef[][] | null; // worldcup: the 12 groups of 4; null otherwise
   rng: Rng;
 }
 
@@ -85,17 +88,26 @@ function leagueSchedule(teams: TeamDef[]): Fixture[][] {
 
 export function makeCompetition(kind: CompetitionKind, teams: TeamDef[], you: TeamDef, seed: number): Competition {
   const rng = makeRng(seed);
-  const field = shuffle(teams, rng);
   let rounds: Fixture[][];
+  let groups: TeamDef[][] | null = null;
   if (kind === 'league') {
-    rounds = leagueSchedule(field);
+    rounds = leagueSchedule(shuffle(teams, rng));
+  } else if (kind === 'worldcup') {
+    // The real A–L draw; each group plays a 3-matchday round robin. Matchday r
+    // is every group's round-r pairing concatenated (so the player's group game
+    // sits alongside the rest of the world's that day).
+    groups = GROUPS.map((g) => teams.filter((t) => t.group === g));
+    const perGroup = groups.map((g) => leagueSchedule(g));
+    rounds = [];
+    for (let r = 0; r < WC_GROUP_ROUNDS; r++) rounds.push(perGroup.flatMap((gr) => gr[r]));
   } else {
     // Cup: pair the shuffled field into the first round; later rounds fill in.
+    const field = shuffle(teams, rng);
     const first: Fixture[] = [];
     for (let i = 0; i < field.length; i += 2) first.push(fixture(field[i], field[i + 1]));
     rounds = [first];
   }
-  return { kind, you, rounds, roundIndex: 0, done: false, champion: null, youOut: false, rng };
+  return { kind, you, rounds, roundIndex: 0, done: false, champion: null, youOut: false, groups, rng };
 }
 
 // The player's fixture in the current round, or null if they have no match
@@ -199,6 +211,16 @@ export function advance(comp: Competition): void {
     }
     return;
   }
+  if (comp.kind === 'worldcup') {
+    // Group stage (Phase 2): after the 3 matchdays, the tournament ends here and
+    // qualification is read off the group tables. (Knockout = Phase 3.)
+    comp.roundIndex++;
+    if (comp.roundIndex >= WC_GROUP_ROUNDS) {
+      comp.done = true;
+      if (!wcAdvancers(comp).some((t) => t.id === comp.you.id)) comp.youOut = true;
+    }
+    return;
+  }
   // Cup: gather winners; either crown a champion or build the next round.
   const winners = comp.rounds[comp.roundIndex].map((f) => f.winner!).filter(Boolean);
   if (winners.length <= 1) {
@@ -233,4 +255,66 @@ export function cupRoundName(comp: Competition, roundIndex = comp.roundIndex): s
     default:
       return `ROUND ${roundIndex + 1}`;
   }
+}
+
+// --- World Cup helpers -----------------------------------------------------
+
+const cmpRows = (x: TableRow, y: TableRow): number =>
+  y.pts - x.pts || y.gf - y.ga - (x.gf - x.ga) || y.gf - x.gf || x.team.name.localeCompare(y.team.name);
+
+// Standings for one group (only fixtures between its four teams).
+export function groupTable(comp: Competition, teams: TeamDef[]): TableRow[] {
+  const ids = new Set(teams.map((t) => t.id));
+  const rows = new Map<string, TableRow>();
+  for (const t of teams) rows.set(t.id, { team: t, p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0 });
+  for (const round of comp.rounds) {
+    for (const f of round) {
+      if (!f.played || !ids.has(f.a.id) || !ids.has(f.b.id)) continue;
+      const ra = rows.get(f.a.id)!;
+      const rb = rows.get(f.b.id)!;
+      ra.p++;
+      rb.p++;
+      ra.gf += f.sa;
+      ra.ga += f.sb;
+      rb.gf += f.sb;
+      rb.ga += f.sa;
+      if (f.sa > f.sb) {
+        ra.w++;
+        rb.l++;
+        ra.pts += 3;
+      } else if (f.sb > f.sa) {
+        rb.w++;
+        ra.l++;
+        rb.pts += 3;
+      } else {
+        ra.d++;
+        rb.d++;
+        ra.pts++;
+        rb.pts++;
+      }
+    }
+  }
+  return [...rows.values()].sort(cmpRows);
+}
+
+// The group a team is drawn in (or null).
+export function wcGroupOf(comp: Competition, team: TeamDef): TeamDef[] | null {
+  return comp.groups?.find((g) => g.some((t) => t.id === team.id)) ?? null;
+}
+
+// The 32 teams that advance: the top two of every group plus the eight
+// best third-placed teams across all groups.
+export function wcAdvancers(comp: Competition): TeamDef[] {
+  if (!comp.groups) return [];
+  const adv: TeamDef[] = [];
+  const thirds: TableRow[] = [];
+  for (const g of comp.groups) {
+    const t = groupTable(comp, g);
+    if (t[0]) adv.push(t[0].team);
+    if (t[1]) adv.push(t[1].team);
+    if (t[2]) thirds.push(t[2]);
+  }
+  thirds.sort(cmpRows);
+  for (let i = 0; i < 8 && i < thirds.length; i++) adv.push(thirds[i].team);
+  return adv;
 }
