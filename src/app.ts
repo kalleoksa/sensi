@@ -41,6 +41,7 @@ import {
   type CompetitionKind,
 } from './competition';
 import { css } from './sprites/palette';
+import { hasTournament, loadTournament, saveTournament, clearTournament } from './save';
 
 type AppScreen =
   | 'title'
@@ -281,13 +282,36 @@ export function makeApp(deps: AppDeps): App {
     }
   }
 
+  // Show CONTINUE at the top of the main menu while a saved tournament exists.
+  function syncMainMenu(): void {
+    const want = hasTournament();
+    const has = mainMenu.items[0] === 'CONTINUE';
+    if (want === has) return;
+    mainMenu.items = want ? ['CONTINUE', ...MAIN_ITEMS] : [...MAIN_ITEMS];
+    mainMenu.enabled = want ? [true, ...MAIN_ENABLED] : [...MAIN_ENABLED];
+    mainMenu.cursor = Math.min(mainMenu.cursor, mainMenu.items.length - 1);
+  }
+
+  function continueTournament(): void {
+    const saved = loadTournament();
+    if (!saved) return;
+    competition = saved.comp;
+    options.lengthIndex = saved.lengthIndex;
+    options.pitchIndex = saved.pitchIndex;
+    pendingMode = '1p';
+    screen = competition.done ? 'compEnd' : 'compHub';
+  }
+
   function updateMainMenu(): void {
+    syncMainMenu();
     const m = consumeMenuInput();
     nav(mainMenu, m.up, m.down);
     if (m.confirm && mainMenu.enabled[mainMenu.cursor]) {
       emitSfx('uiSelect');
       const label = mainMenu.items[mainMenu.cursor];
-      if (label === 'FRIENDLY') {
+      if (label === 'CONTINUE') {
+        continueTournament();
+      } else if (label === 'FRIENDLY') {
         friendly.cursor = 0;
         screen = 'friendlySetup';
       } else if (label === 'WORLD CUP') {
@@ -348,6 +372,7 @@ export function makeApp(deps: AppDeps): App {
     const chosen = browseTeams(ts.continent)[ts.list.cursor];
     if (tsPurpose === 'competition') {
       competition = makeCompetition(pendingComp, [...TEAMS], chosen, Date.now() >>> 0);
+      saveTournament(competition, options.lengthIndex, options.pitchIndex); // resumable from match 1
       pendingMode = '1p';
       screen = 'compHub';
       return;
@@ -559,6 +584,9 @@ export function makeApp(deps: AppDeps): App {
       emitSfx('uiSelect');
       advance(competition);
       session = null; // finished match no longer needed
+      // Auto-save the new state between matches (cleared once the run is over).
+      if (competition.done) clearTournament();
+      else saveTournament(competition, options.lengthIndex, options.pitchIndex);
       screen = competition.done ? 'compEnd' : 'compHub';
     }
   }
@@ -567,6 +595,7 @@ export function makeApp(deps: AppDeps): App {
     const m = consumeMenuInput();
     if (m.confirm || m.back) {
       emitSfx('uiSelect');
+      clearTournament();
       competition = null;
       session = null;
       screen = 'mainMenu';

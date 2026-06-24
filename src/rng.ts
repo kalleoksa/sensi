@@ -6,6 +6,8 @@ export interface Rng {
   range(min: number, max: number): number;
   int(min: number, max: number): number; // inclusive
   pick<T>(arr: readonly T[]): T;
+  getState(): number; // current internal state (to serialise a save game)
+  setState(n: number): void; // restore a saved state
 }
 
 export function makeRng(seed: number): Rng {
@@ -22,6 +24,10 @@ export function makeRng(seed: number): Rng {
     range: (min, max) => min + next() * (max - min),
     int: (min, max) => min + Math.floor(next() * (max - min + 1)),
     pick: (arr) => arr[Math.floor(next() * arr.length)],
+    getState: () => a >>> 0,
+    setState: (n) => {
+      a = n >>> 0;
+    },
   };
 }
 
