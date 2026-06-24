@@ -102,16 +102,14 @@ function head(f: Facing, hair: RGB, skin: RGB): Px[] {
 // Per-pixel shirt colour for the torso, given the kit pattern + facing. Stripes
 // and checks only render on chest-facing frames (front/back/diagonal); the pure
 // side view ('R') falls back to solid so a few-px-wide body doesn't turn to
-// mush. 'sleeves' tints the shirt's outer edge on every facing (trim).
+// mush. 'band' is a horizontal chest stripe (upper shirt row) and reads on every
+// facing.
 type ShirtPaint = (x: number, y: number) => RGB;
 function shirtPainter(col: PlayerColors, f: Facing): ShirtPaint {
   const base = col.shirt;
   const acc = col.accent ?? base;
   const pat = col.pattern ?? 'solid';
-  if (pat === 'sleeves') {
-    // Outer pixel of each shirt row is the accent (row 4 spans x0..5, row 5 x1..4).
-    return (x, y) => ((y === 4 ? x === 0 || x === 5 : x === 1 || x === 4) ? acc : base);
-  }
+  if (pat === 'band') return (_x, y) => (y === 4 ? acc : base); // chest band, any facing
   if (f === 'R' || pat === 'solid') return () => base;
   if (pat === 'stripes') return (x) => (x % 2 === 0 ? base : acc); // vertical bands
   if (pat === 'check') return (x, y) => ((x + y) % 2 === 0 ? base : acc);

@@ -41,8 +41,9 @@ export type PlayerState = 'idle' | 'run' | 'kick' | 'header' | 'slide' | 'fallen
 
 // Shirt pattern for kit rendering. 'stripes' (vertical) and 'check' only render
 // on chest-facing frames (front/back); the pure side view falls back to solid,
-// SWOS-style. 'sleeves' tints the shirt's outer edges with the accent (trim).
-export type KitPattern = 'solid' | 'stripes' | 'check' | 'sleeves';
+// SWOS-style. 'band' is a horizontal accent stripe across the chest (reads on
+// every facing) — for flag-banded kits like Germany.
+export type KitPattern = 'solid' | 'stripes' | 'check' | 'band';
 export type Role = 'gk' | 'def' | 'mid' | 'fwd';
 
 // Per-tick AI duty, assigned by computeDuties() in ai.ts. Transient: recomputed
