@@ -526,6 +526,13 @@ function carrierAi(state: GameState, p: Player, dt: number): void {
     return;
   }
 
+  // 1b) Tight to goal with no clear lane: shoot anyway — a blocked/saved shot
+  //     beats dribbling the ball over the byline.
+  if (dGoal < SHOOT_RANGE * 0.55) {
+    kickToward(state, p, CX, goalY, SHOT_EVAL_SPEED, 40);
+    return;
+  }
+
   // 2) Take a safe forward pass that makes real ground (commit forward).
   const fwd = bestPass(state, p);
   if (fwd && fwd.advance > FORWARD_PROGRESS_MIN) {
@@ -545,8 +552,9 @@ function carrierAi(state: GameState, p: Player, dt: number): void {
   }
 
   // 4) Otherwise dribble at goal, veering around a defender that's closing in.
+  //    Aim short of the goal line (and centrally) so we never run the ball out.
   let tx = CX;
-  const ty = goalY;
+  const ty = goalY - fs * 16;
   if (opp && d < DRIBBLE_AVOID) {
     const side = p.x <= opp.x ? -1 : 1; // step to the side away from the defender
     tx = clamp(p.x + side * 30, FIELD_L + 8, FIELD_R - 8);
