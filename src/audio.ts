@@ -12,6 +12,7 @@ export type SfxName =
   | 'pass'
   | 'shot'
   | 'bounce'
+  | 'woodwork'
   | 'slide'
   | 'tackle'
   | 'whistleKick'
@@ -34,6 +35,7 @@ const MIN_INTERVAL: Record<SfxName, number> = {
   pass: 0.05,
   shot: 0.05,
   bounce: 0.06,
+  woodwork: 0.1,
   slide: 0.15,
   tackle: 0.1,
   whistleKick: 0.5,
@@ -197,6 +199,11 @@ function play(e: SfxEvent, t: number): void {
       break;
     case 'bounce':
       tick(t, 380, 0.05, g * 0.4);
+      break;
+    case 'woodwork':
+      // Hard wooden knock: a low resonant pop with a sharp click on top.
+      thud(t, 220, 0.08, g * 0.7);
+      tick(t, 600, 0.04, g * 0.5);
       break;
     case 'slide':
       scrape(t, 0.3, g * 0.5);

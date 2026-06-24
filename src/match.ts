@@ -16,6 +16,7 @@ import {
   FIELD_R,
   CX,
   GOAL_W,
+  GOAL_HEIGHT,
   SIX_BOX_D,
   PEN_SPOT_D,
   PEN_BOX_D,
@@ -23,7 +24,6 @@ import {
   CORNER_R,
 } from './world';
 
-const GOAL_HEIGHT = 16; // ball above this z sails over the bar
 const DEAD_TIME = 1.7; // celebration: ball rolls into the net, then kickoff
 const RESTART_LOCK = 99; // ball is dead until the taker delivers it
 const KICKOFF_READY = 1.0; // ready freeze before a kickoff is released to play

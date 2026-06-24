@@ -32,6 +32,8 @@ export const CX = BORDER + PLAY_W / 2; // pitch center x
 // penalty box runs ~14% of pitch length deep.
 export const GOAL_W = 48;
 export const GOAL_DEPTH = 20; // visual 3D depth of the goal off the line
+export const GOAL_HEIGHT = 16; // crossbar height: a ball below this passes under the bar
+export const GOAL_BAR_THICK = 3; // z-thickness of the crossbar (the ball rebounds off this band)
 export const PEN_BOX_W = 200;
 export const PEN_BOX_D = 60;
 export const SIX_BOX_W = 86;
