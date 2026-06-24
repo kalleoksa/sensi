@@ -36,6 +36,7 @@ const WHITE = rgb(238, 238, 232);
 const BLACK = rgb(30, 30, 34);
 const NAVY = rgb(26, 38, 88);
 const RED = rgb(200, 38, 40);
+const SPAIN_RED = rgb(170, 21, 27); // Spain's crimson (flag/kit #AA151B)
 const CRIMSON = rgb(150, 28, 40); // deep red (Portugal)
 const MAROON = rgb(122, 26, 48); // Qatar
 const GREEN = rgb(28, 140, 64);
@@ -61,7 +62,7 @@ export const TEAMS: TeamDef[] = [
   { id: 'eng', name: 'ENGLAND', short: 'ENG', continent: 'EUROPE', group: 'L', kit: { shirt: WHITE, shorts: NAVY, socks: WHITE } },
   { id: 'fra', name: 'FRANCE', short: 'FRA', continent: 'EUROPE', group: 'I', kit: { shirt: FR_BLUE, shorts: WHITE, socks: RED } },
   { id: 'ger', name: 'GERMANY', short: 'GER', continent: 'EUROPE', group: 'E', kit: { shirt: WHITE, shorts: BLACK, socks: WHITE } },
-  { id: 'esp', name: 'SPAIN', short: 'ESP', continent: 'EUROPE', group: 'H', kit: { shirt: RED, shorts: NAVY, socks: NAVY } },
+  { id: 'esp', name: 'SPAIN', short: 'ESP', continent: 'EUROPE', group: 'H', kit: { shirt: SPAIN_RED, shorts: NAVY, socks: NAVY } },
   { id: 'ned', name: 'NETHERLANDS', short: 'NED', continent: 'EUROPE', group: 'F', kit: { shirt: ORANGE, shorts: WHITE, socks: ORANGE } },
   { id: 'swe', name: 'SWEDEN', short: 'SWE', continent: 'EUROPE', group: 'F', kit: { shirt: YELLOW, shorts: BLUE, socks: YELLOW } },
   { id: 'cze', name: 'CZECHIA', short: 'CZE', continent: 'EUROPE', group: 'A', kit: { shirt: RED, shorts: WHITE, socks: BLUE } },
