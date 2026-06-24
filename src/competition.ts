@@ -212,12 +212,33 @@ export function advance(comp: Competition): void {
     return;
   }
   if (comp.kind === 'worldcup') {
-    // Group stage (Phase 2): after the 3 matchdays, the tournament ends here and
-    // qualification is read off the group tables. (Knockout = Phase 3.)
     comp.roundIndex++;
-    if (comp.roundIndex >= WC_GROUP_ROUNDS) {
+    if (comp.roundIndex < WC_GROUP_ROUNDS) return; // still in the group stage
+    if (comp.roundIndex === WC_GROUP_ROUNDS) {
+      // Groups done: seed the Round of 32 from the standings and play on.
+      const r32 = buildKnockout(comp);
+      comp.rounds.push(r32);
+      if (!r32.some((f) => f.a.id === comp.you.id || f.b.id === comp.you.id)) {
+        comp.done = true; // didn't qualify
+        comp.youOut = true;
+      }
+      return;
+    }
+    // Knockout: build the next round from the winners of the one just completed.
+    const prev = comp.rounds[comp.roundIndex - 1] ?? [];
+    const winners = prev.map((f) => f.winner).filter((w): w is TeamDef => !!w);
+    if (winners.length <= 1) {
       comp.done = true;
-      if (!wcAdvancers(comp).some((t) => t.id === comp.you.id)) comp.youOut = true;
+      comp.champion = winners[0] ?? null;
+      if (!comp.champion || comp.champion.id !== comp.you.id) comp.youOut = true;
+      return;
+    }
+    const next: Fixture[] = [];
+    for (let i = 0; i < winners.length; i += 2) next.push(fixture(winners[i], winners[i + 1]));
+    comp.rounds.push(next);
+    if (!next.some((f) => f.a.id === comp.you.id || f.b.id === comp.you.id)) {
+      comp.done = true;
+      comp.youOut = true;
     }
     return;
   }
@@ -252,6 +273,8 @@ export function cupRoundName(comp: Competition, roundIndex = comp.roundIndex): s
       return 'QUARTER FINAL';
     case 8:
       return 'ROUND OF 16';
+    case 16:
+      return 'ROUND OF 32';
     default:
       return `ROUND ${roundIndex + 1}`;
   }
@@ -317,4 +340,37 @@ export function wcAdvancers(comp: Competition): TeamDef[] {
   thirds.sort(cmpRows);
   for (let i = 0; i < 8 && i < thirds.length; i++) adv.push(thirds[i].team);
   return adv;
+}
+
+// Seed the Round of 32 from the group results: 12 winners + 12 runners-up + 8
+// best thirds. Each winner is drawn against a lower seed from a different group;
+// the leftover lower seeds pair off. A simplified, same-group-avoiding bracket —
+// not the exact official template.
+function buildKnockout(comp: Competition): Fixture[] {
+  if (!comp.groups) return [];
+  const winners: TeamDef[] = [];
+  const lowers: TeamDef[] = []; // runners-up, then the best thirds
+  const thirdRows: TableRow[] = [];
+  for (const g of comp.groups) {
+    const t = groupTable(comp, g);
+    if (t[0]) winners.push(t[0].team);
+    if (t[1]) lowers.push(t[1].team);
+    if (t[2]) thirdRows.push(t[2]);
+  }
+  thirdRows.sort(cmpRows);
+  for (let i = 0; i < 8 && i < thirdRows.length; i++) lowers.push(thirdRows[i].team);
+
+  const pool = shuffle(lowers, comp.rng);
+  const used = new Set<string>();
+  const ties: Fixture[] = [];
+  for (const w of winners) {
+    const opp = pool.find((o) => !used.has(o.id) && o.group !== w.group) ?? pool.find((o) => !used.has(o.id));
+    if (opp) {
+      used.add(opp.id);
+      ties.push(fixture(w, opp));
+    }
+  }
+  const rest = pool.filter((o) => !used.has(o.id));
+  for (let i = 0; i < rest.length; i += 2) if (rest[i + 1]) ties.push(fixture(rest[i], rest[i + 1]));
+  return ties;
 }

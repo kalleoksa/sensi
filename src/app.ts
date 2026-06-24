@@ -36,6 +36,7 @@ import {
   cupRoundName,
   groupTable,
   wcGroupOf,
+  wcAdvancers,
   type Competition,
   type CompetitionKind,
 } from './competition';
@@ -730,15 +731,18 @@ export function makeApp(deps: AppDeps): App {
 
   function drawCupRound(comp: Competition): void {
     const ties = comp.rounds[comp.roundIndex] ?? [];
+    // The WC Round of 32 (16 ties) won't fit at scale 2 — compact it.
+    const compact = ties.length > 8;
+    const sc = compact ? 1 : 2;
+    const rowH = compact ? 12 : 22;
     let y = 56;
     for (const f of ties) {
       const mine = f.a === comp.you || f.b === comp.you;
       const c = mine ? DEFAULT_STYLE.hi : DEFAULT_STYLE.on;
-      const scoreShown = f.played;
-      const mid = scoreShown ? `${f.sa} - ${f.sb}` : 'V';
+      const mid = f.played ? `${f.sa} - ${f.sb}` : 'V';
       const line = `${f.a.short} ${mid} ${f.b.short}`;
-      drawTextCentered(ctx, line, 0, VIEW_W, y, c, 2);
-      y += 22;
+      drawTextCentered(ctx, line, 0, VIEW_W, y, c, sc);
+      y += rowH;
     }
   }
 
@@ -752,9 +756,14 @@ export function makeApp(deps: AppDeps): App {
       drawLeagueTable(competition);
     } else if (competition.kind === 'worldcup') {
       drawHeader('WORLD CUP');
-      drawTextCentered(ctx, `GROUP ${competition.you.group ?? ''}   MATCH ${competition.roundIndex + 1} / 3`, 0, VIEW_W, 28, SUBTLE, 1);
-      const grp = wcGroupOf(competition, competition.you);
-      if (grp) drawGroupTable(competition, grp);
+      if (competition.roundIndex < 3) {
+        drawTextCentered(ctx, `GROUP ${competition.you.group ?? ''}   MATCH ${competition.roundIndex + 1} / 3`, 0, VIEW_W, 28, SUBTLE, 1);
+        const grp = wcGroupOf(competition, competition.you);
+        if (grp) drawGroupTable(competition, grp);
+      } else {
+        drawTextCentered(ctx, cupRoundName(competition), 0, VIEW_W, 28, SUBTLE, 1);
+        drawCupRound(competition);
+      }
     } else {
       drawHeader('CUP');
       drawTextCentered(ctx, cupRoundName(competition), 0, VIEW_W, 28, SUBTLE, 1);
@@ -770,13 +779,16 @@ export function makeApp(deps: AppDeps): App {
   function drawCompResults(): void {
     if (!competition) return;
     drawBackdrop();
-    const grp = competition.kind === 'worldcup' ? wcGroupOf(competition, competition.you) : null;
+    const wcGroups = competition.kind === 'worldcup' && competition.roundIndex < 3;
+    const grp = wcGroups ? wcGroupOf(competition, competition.you) : null;
     const title =
       competition.kind === 'cup'
         ? `${cupRoundName(competition)} RESULTS`
-        : competition.kind === 'worldcup'
+        : wcGroups
           ? `GROUP ${competition.you.group ?? ''}   MATCH ${competition.roundIndex + 1}`
-          : `ROUND ${competition.roundIndex + 1} RESULTS`;
+          : competition.kind === 'worldcup'
+            ? `${cupRoundName(competition)} RESULTS`
+            : `ROUND ${competition.roundIndex + 1} RESULTS`;
     drawHeader('RESULTS');
     drawTextCentered(ctx, title, 0, VIEW_W, 28, SUBTLE, 1);
     const all = competition.rounds[competition.roundIndex] ?? [];
@@ -789,7 +801,8 @@ export function makeApp(deps: AppDeps): App {
       const mine = f.a === competition.you || f.b === competition.you;
       const c = mine ? DEFAULT_STYLE.hi : DEFAULT_STYLE.on;
       let line = `${f.a.short} ${f.sa} - ${f.sb} ${f.b.short}`;
-      if (competition.kind === 'cup' && f.sa === f.sb && f.winner) line += ` (${f.winner.short} PENS)`;
+      const knockout = competition.kind === 'cup' || (competition.kind === 'worldcup' && competition.roundIndex >= 3);
+      if (knockout && f.sa === f.sb && f.winner) line += ` (${f.winner.short} PENS)`;
       drawTextCentered(ctx, line, 0, VIEW_W, y, c, mine ? 2 : 1);
       y += mine ? 18 : 12;
     }
@@ -803,13 +816,21 @@ export function makeApp(deps: AppDeps): App {
     const won = competition.champion === competition.you;
     if (competition.kind === 'worldcup') {
       const you = competition.you;
-      const grp = wcGroupOf(competition, you);
-      const pos = grp ? groupTable(competition, grp).findIndex((r) => r.team.id === you.id) + 1 : 0;
-      const ord = ['', '1ST', '2ND', '3RD', '4TH'][pos] ?? `${pos}TH`;
-      const qualified = !competition.youOut;
-      drawTextCentered(ctx, qualified ? 'QUALIFIED!' : 'GROUP STAGE EXIT', 0, VIEW_W, 84, DEFAULT_STYLE.hi, qualified ? 3 : 2);
-      drawTextCentered(ctx, `GROUP ${competition.you.group ?? ''}  -  ${ord}`, 0, VIEW_W, 128, DEFAULT_STYLE.on, 2);
-      if (qualified) drawTextCentered(ctx, 'THROUGH TO THE LAST 32', 0, VIEW_W, 156, SUBTLE, 1);
+      const champ = competition.champion?.id === you.id;
+      const qualified = wcAdvancers(competition).some((t) => t.id === you.id);
+      if (champ) {
+        drawTextCentered(ctx, 'WORLD CHAMPIONS!', 0, VIEW_W, 84, DEFAULT_STYLE.hi, 3);
+        drawTextCentered(ctx, you.name, 0, VIEW_W, 128, DEFAULT_STYLE.on, 2);
+      } else if (!qualified) {
+        const grp = wcGroupOf(competition, you);
+        const pos = grp ? groupTable(competition, grp).findIndex((r) => r.team.id === you.id) + 1 : 0;
+        const ord = ['', '1ST', '2ND', '3RD', '4TH'][pos] ?? `${pos}TH`;
+        drawTextCentered(ctx, 'GROUP STAGE EXIT', 0, VIEW_W, 90, DEFAULT_STYLE.hi, 2);
+        drawTextCentered(ctx, `GROUP ${you.group ?? ''}  -  ${ord}`, 0, VIEW_W, 130, DEFAULT_STYLE.on, 2);
+      } else {
+        drawTextCentered(ctx, 'KNOCKED OUT', 0, VIEW_W, 84, DEFAULT_STYLE.hi, 3);
+        drawTextCentered(ctx, cupRoundName(competition, competition.roundIndex - 1), 0, VIEW_W, 128, DEFAULT_STYLE.on, 2);
+      }
     } else if (competition.kind === 'cup') {
       if (won) {
         drawTextCentered(ctx, 'CUP WINNERS!', 0, VIEW_W, 80, DEFAULT_STYLE.hi, 3);
