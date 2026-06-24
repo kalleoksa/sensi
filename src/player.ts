@@ -52,6 +52,12 @@ const SHOT_MAX = 392;
 const SHOT_LOFT = 190; // vz at full power
 const AFTERTOUCH_WINDOW = 0.34;
 const CONTROL_LOCK = 0.28;
+// Assisted passing: a tap finds a teammate roughly in the facing direction and
+// leads the ball into the space ahead of his run (a pass into space, not at his
+// feet). Falls back to a plain directional pass when no good target is ahead.
+const PASS_MIN = 22; // ignore teammates closer than this
+const PASS_RANGE = 150; // and farther than this
+const PASS_LEAD_TIME = 0.35; // seconds of the receiver's run to lead into
 
 // Headers: an airborne ball at head height near an outfielder is nodded on.
 const HEAD_Z_MIN = 7; // below this the ball is controllable on the ground
@@ -174,13 +180,54 @@ function standTackle(p: Player): void {
   emitSfx('tackle', 0.45);
 }
 
+// Best assisted-pass teammate: roughly in the facing direction, in range, and
+// the most open. Returns null when there's no good option ahead (plain pass).
+function bestPassTarget(state: GameState, p: Player): Player | null {
+  const [fx, fy] = DIR_VEC[p.dir];
+  let best: Player | null = null;
+  let bestScore = -Infinity;
+  for (const m of state.players) {
+    if (m.team !== p.team || m === p || m.role === 'gk' || m.sentOff || m.state === 'fallen') continue;
+    const dx = m.x - p.x;
+    const dy = m.y - p.y;
+    const d = Math.hypot(dx, dy);
+    if (d < PASS_MIN || d > PASS_RANGE) continue;
+    const align = (dx * fx + dy * fy) / (d || 1); // 1 = dead ahead of the facing dir
+    if (align < 0.25) continue; // must be roughly where we're aiming
+    let open = Infinity;
+    for (const o of state.players) {
+      if (o.team === p.team || o.sentOff) continue;
+      const od = Math.hypot(o.x - m.x, o.y - m.y);
+      if (od < open) open = od;
+    }
+    const score = align * 28 + Math.min(open, 40) - d * 0.08;
+    if (score > bestScore) {
+      bestScore = score;
+      best = m;
+    }
+  }
+  return best;
+}
+
 function strike(state: GameState, p: Player, charge: number): void {
   const b = state.ball;
-  const [fx, fy] = DIR_VEC[p.dir];
+  let [fx, fy] = DIR_VEC[p.dir];
   const tap = charge < TAP_CHARGE;
   let speed: number;
   let loft: number;
   if (tap) {
+    // Assisted: pass to the best teammate ahead, led into his run.
+    const target = bestPassTarget(state, p);
+    if (target) {
+      const lx = target.x + target.vx * PASS_LEAD_TIME;
+      const ly = target.y + target.vy * PASS_LEAD_TIME;
+      const dx = lx - p.x;
+      const dy = ly - p.y;
+      const d = Math.hypot(dx, dy) || 1;
+      fx = dx / d;
+      fy = dy / d;
+      p.dir = dirFromVec(fx, fy);
+    }
     speed = PASS_SPEED;
     loft = 0;
   } else {

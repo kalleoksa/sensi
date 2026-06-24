@@ -31,6 +31,7 @@ const MAX_SUPPORT = 3; // off-ball attackers making forward runs at once
 const PASS_EVAL_SPEED = 215;
 const SHOT_EVAL_SPEED = 360;
 const MIN_PASS_DIST = 24; // shorter than this isn't worth a pass
+const PASS_LEAD_TIME = 0.35; // seconds of the receiver's run to lead a pass into
 const INTERCEPT_PAD = 8; // player+ball radii: opponent this close to the lane intercepts
 
 // SupportSpotCalculator (Buckland "Simple Soccer"): a grid of candidate spots in
@@ -533,10 +534,15 @@ function carrierAi(state: GameState, p: Player, dt: number): void {
     return;
   }
 
-  // 2) Take a safe forward pass that makes real ground (commit forward).
+  // 2) Take a safe forward pass that makes real ground (commit forward). Lead it
+  //    into the space ahead of the receiver's run — a ball into space, not to
+  //    feet — so he collects it on the move behind the defence.
   const fwd = bestPass(state, p);
   if (fwd && fwd.advance > FORWARD_PROGRESS_MIN) {
-    kickToward(state, p, fwd.mate.x, fwd.mate.y + fs * 8, PASS_EVAL_SPEED); // lead the run
+    const m = fwd.mate;
+    const lx = clamp(m.x + m.vx * PASS_LEAD_TIME, FIELD_L + 6, FIELD_R - 6);
+    const ly = clamp(m.y + m.vy * PASS_LEAD_TIME + fs * 8, FIELD_T + 6, FIELD_B - 6);
+    kickToward(state, p, lx, ly, PASS_EVAL_SPEED);
     return;
   }
 
