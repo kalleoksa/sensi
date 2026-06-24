@@ -239,6 +239,37 @@ function bakeMarkings(b: Buf): void {
   }
 }
 
+// Corner flags: a whitish pole standing at each pitch corner (drawn with height
+// toward -y, like the players/goals) topped by a red pennant, with a cast
+// shadow using the same projection as the goal shadows. Baked over the markings.
+const FLAG_POLE: RGB = POST;
+const FLAG_RED: RGB = [206, 40, 34];
+
+function bakeCornerFlags(b: Buf): void {
+  const H = 10; // pole height above the corner footprint
+  const corners: ReadonlyArray<readonly [number, number, 1 | -1]> = [
+    [FIELD_L, FIELD_T, 1],
+    [FIELD_R, FIELD_T, -1],
+    [FIELD_L, FIELD_B, 1],
+    [FIELD_R, FIELD_B, -1],
+  ];
+  for (const [x, y, dir] of corners) {
+    // Cast shadow on the grass (same offset as goalSolids -> bakeShadows).
+    for (let h = 0; h <= H; h++) {
+      const sx = Math.round(x + 1.4 * h);
+      const sy = Math.round(y + 0.5 * h);
+      if ((sx + sy) % 2 === 0) b.set(sx, sy, SHADOW);
+    }
+    // Pole rising toward the top of the screen.
+    for (let h = 0; h <= H; h++) b.set(x, y - h, FLAG_POLE);
+    // Triangular pennant near the top, fluttering toward the pitch interior.
+    const topY = y - H + 1;
+    for (let r = 0; r < 4; r++) {
+      for (let c = 1; c <= 4 - r; c++) b.set(x + dir * c, topY + r, FLAG_RED);
+    }
+  }
+}
+
 // --- Stadium decoration (crowd + ad boards) around the pitch ---------------
 
 const CROWD_COLORS: RGB[] = [
@@ -344,6 +375,7 @@ export function bakePitch(tint?: GrassTint): BakedPitch {
 
   bakeShadows(b);
   bakeMarkings(b);
+  bakeCornerFlags(b);
   ctx.putImageData(img, 0, 0);
 
   return {
