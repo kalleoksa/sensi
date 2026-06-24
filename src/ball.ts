@@ -2,7 +2,17 @@
 // One step == one fixed 60Hz tick (dt in seconds).
 
 import type { Ball } from './state';
-import { WORLD_W, WORLD_H, FIELD_T, FIELD_B, CX, GOAL_W, GOAL_DEPTH } from './world';
+import {
+  WORLD_W,
+  WORLD_H,
+  FIELD_T,
+  FIELD_B,
+  CX,
+  GOAL_W,
+  GOAL_DEPTH,
+  GOAL_HEIGHT,
+  GOAL_BAR_THICK,
+} from './world';
 import { emitSfx } from './audio';
 
 export const GRAVITY = 360; // px/s^2 on vz (lighter = balls hang longer)
@@ -10,6 +20,7 @@ export const BOUNCE = 0.6; // vertical restitution
 export const GROUND_FRICTION = 2.2; // per-second velocity decay while rolling
 export const AIR_DRAG = 0.15; // light horizontal drag in flight
 export const BALL_RADIUS = 1.5;
+export const BAR_RESTITUTION = 0.5; // how lively the ball rebounds off the crossbar
 
 // Pitch-condition multipliers, set once per match from the chosen surface (see
 // options.ts). >1 friction = a slow/draggy pitch (mud); <1 = slick (ice). These
@@ -106,6 +117,41 @@ export function stepBall(b: Ball, dt: number): void {
   } else if (b.y > WORLD_H - BALL_RADIUS) {
     b.y = WORLD_H - BALL_RADIUS;
     b.vy = -b.vy * 0.4;
+  }
+
+  // Crossbar: a ball reaching the goal line within the mouth at bar height
+  // (z within the bar's thickness band) strikes the woodwork and rebounds back
+  // into play — instead of scoring (under the bar) or sailing over (above it).
+  // Runs before net containment / the match's goal check, so a ball off the bar
+  // is back in front of the line by the time those see it.
+  {
+    let lineY = 0;
+    let into = 0; // sign that pushes the ball back into the field
+    if (b.prevY >= FIELD_T && b.y < FIELD_T) {
+      lineY = FIELD_T;
+      into = 1; // field lies at +y from the top goal line
+    } else if (b.prevY <= FIELD_B && b.y > FIELD_B) {
+      lineY = FIELD_B;
+      into = -1; // field lies at -y from the bottom goal line
+    }
+    if (into !== 0) {
+      const barLo = GOAL_HEIGHT;
+      const barHi = GOAL_HEIGHT + GOAL_BAR_THICK;
+      const f = (lineY - b.prevY) / (b.y - b.prevY); // fraction of the step at the line
+      const xCross = b.prevX + (b.x - b.prevX) * f;
+      const zCross = b.prevZ + (b.z - b.prevZ) * f;
+      if (Math.abs(xCross - CX) < GOAL_W / 2 && zCross >= barLo && zCross <= barHi) {
+        const impact = Math.hypot(b.vx, b.vy, b.vz);
+        b.x = xCross;
+        b.y = lineY + into * (BALL_RADIUS + 1); // sit just in front of the bar
+        b.z = barHi; // perched on the bar, about to fall
+        b.vy = into * Math.abs(b.vy) * BAR_RESTITUTION; // rebound back into play
+        b.vz = -Math.abs(b.vz) * 0.4; // deflect downward off the bar
+        b.vx *= 0.7;
+        b.spin *= 0.3;
+        emitSfx('woodwork', Math.min(1, impact / 280));
+      }
+    }
   }
 
   // Net containment: inside the goal mouth (and below the bar), the ball is
