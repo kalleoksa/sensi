@@ -34,16 +34,23 @@ const MIN_PASS_DIST = 24; // shorter than this isn't worth a pass
 const PASS_LEAD_TIME = 0.35; // seconds of the receiver's run to lead a pass into
 const INTERCEPT_PAD = 8; // player+ball radii: opponent this close to the lane intercepts
 
-// SupportSpotCalculator (Buckland "Simple Soccer"): a grid of candidate spots in
-// the attacking half, each scored on pass-safety + shooting potential + an
-// optimal distance from the carrier. The best spots become the supporters' runs.
-const SUPPORT_COLS = 4;
-const SUPPORT_ROWS = 5;
+// SupportSpotCalculator (Buckland "Simple Soccer"): a grid of candidate spots,
+// each scored on how OPEN it is (distance to the nearest defender — this is what
+// "finding free space" means), plus a safe pass lane to it, shooting potential,
+// an optimal distance from the carrier, and advancement. The best spots become
+// the supporters' off-ball runs. The grid is anchored to the ball's depth (not
+// the halfway line) so a supporter can always show for a nearby outlet — even
+// when we win the ball deep — as well as run in behind.
+const SUPPORT_COLS = 5;
+const SUPPORT_ROWS = 6;
+const SUPPORT_OPEN_W = 2; // reward genuinely unmarked space (the core signal)
+const SUPPORT_OPEN_REF = 55; // px to the nearest defender that counts as "open"
 const SUPPORT_PASS_SAFE_W = 2;
 const SUPPORT_CAN_SHOOT_W = 1;
 const SUPPORT_DIST_W = 2;
 const SUPPORT_ADVANCE_W = 1; // prefer spots ahead of the ball
 const SUPPORT_OPTIMAL_DIST = 70; // px from the carrier a supporter wants to be
+const SUPPORT_BEHIND = 34; // grid reaches this far behind the carrier (a drop outlet)
 const SUPPORT_MIN_SEP = 44; // keep supporters from piling on one spot
 const SUPPORT_TRAVEL_W = 0.02; // mild bias: a supporter prefers nearer good spots
 
@@ -276,6 +283,12 @@ function scoreSpot(state: GameState, carrier: Player, x: number, y: number, goal
   let score = 1;
   const passDist = Math.hypot(x - carrier.x, y - carrier.y);
 
+  // Openness: how far the nearest defender is from this spot. A supporter wants
+  // to receive in space, not next to a marker — this is the primary "find free
+  // space" term (saturates once we're a clear pass-radius clear of any opponent).
+  const open = nearestEnemyDist(state, x, y, carrier.team);
+  score += SUPPORT_OPEN_W * Math.min(1, open / SUPPORT_OPEN_REF);
+
   if (
     passDist > MIN_PASS_DIST &&
     isFinite(ballTravelTime(passDist, PASS_EVAL_SPEED)) &&
@@ -309,12 +322,18 @@ function assignSupportTargets(state: GameState, carrier: Player): void {
   if (supporters.length === 0) return;
 
   const goalY = carrier.attacksTop ? FIELD_T : FIELD_B;
+  const fs = carrier.attacksTop ? -1 : 1; // forward sign (toward the attacking goal)
   const yFar = carrier.attacksTop ? FIELD_T + 24 : FIELD_B - 24; // just off the goal line
+  // Near edge sits a little BEHIND the carrier so a supporter can drop in to
+  // offer a short outlet; the far edge is the byline for runs in behind. This
+  // tracks the ball up the pitch instead of being pinned to the halfway line, so
+  // building from deep still produces nearby options rather than only long bombs.
+  const yNear = clamp(carrier.y - fs * SUPPORT_BEHIND, FIELD_T + 24, FIELD_B - 24);
   const spots: Spot[] = [];
   for (let c = 0; c < SUPPORT_COLS; c++) {
     const x = FIELD_L + 8 + ((c + 0.5) / SUPPORT_COLS) * (PLAY_W - 16);
     for (let r = 0; r < SUPPORT_ROWS; r++) {
-      const y = MID_Y + (yFar - MID_Y) * ((r + 0.5) / SUPPORT_ROWS);
+      const y = yNear + (yFar - yNear) * ((r + 0.5) / SUPPORT_ROWS);
       spots.push({ x, y, score: scoreSpot(state, carrier, x, y, goalY) });
     }
   }
