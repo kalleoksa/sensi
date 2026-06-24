@@ -571,7 +571,8 @@ export function makeApp(deps: AppDeps): App {
   }
 
   function drawHeader(text: string): void {
-    drawTextCentered(ctx, text, 0, VIEW_W, 14, TITLE, 2);
+    // Top-aligned so a subtitle line fits cleanly below it within the band.
+    drawTextCentered(ctx, text, 0, VIEW_W, 6, TITLE, 2);
   }
 
   function drawMainMenu(): void {
@@ -752,21 +753,21 @@ export function makeApp(deps: AppDeps): App {
     const f = yourFixture(competition);
     if (competition.kind === 'league') {
       drawHeader('LEAGUE');
-      drawTextCentered(ctx, `ROUND ${competition.roundIndex + 1} / ${competition.rounds.length}`, 0, VIEW_W, 28, SUBTLE, 1);
+      drawTextCentered(ctx, `ROUND ${competition.roundIndex + 1} / ${competition.rounds.length}`, 0, VIEW_W, 24, SUBTLE, 1);
       drawLeagueTable(competition);
     } else if (competition.kind === 'worldcup') {
       drawHeader('WORLD CUP');
       if (competition.roundIndex < 3) {
-        drawTextCentered(ctx, `GROUP ${competition.you.group ?? ''}   MATCH ${competition.roundIndex + 1} / 3`, 0, VIEW_W, 28, SUBTLE, 1);
+        drawTextCentered(ctx, `GROUP ${competition.you.group ?? ''}   MATCH ${competition.roundIndex + 1} / 3`, 0, VIEW_W, 24, SUBTLE, 1);
         const grp = wcGroupOf(competition, competition.you);
         if (grp) drawGroupTable(competition, grp);
       } else {
-        drawTextCentered(ctx, cupRoundName(competition), 0, VIEW_W, 28, SUBTLE, 1);
+        drawTextCentered(ctx, cupRoundName(competition), 0, VIEW_W, 24, SUBTLE, 1);
         drawCupRound(competition);
       }
     } else {
       drawHeader('CUP');
-      drawTextCentered(ctx, cupRoundName(competition), 0, VIEW_W, 28, SUBTLE, 1);
+      drawTextCentered(ctx, cupRoundName(competition), 0, VIEW_W, 24, SUBTLE, 1);
       drawCupRound(competition);
     }
     if (f) {
@@ -790,7 +791,7 @@ export function makeApp(deps: AppDeps): App {
             ? `${cupRoundName(competition)} RESULTS`
             : `ROUND ${competition.roundIndex + 1} RESULTS`;
     drawHeader('RESULTS');
-    drawTextCentered(ctx, title, 0, VIEW_W, 28, SUBTLE, 1);
+    drawTextCentered(ctx, title, 0, VIEW_W, 24, SUBTLE, 1);
     const all = competition.rounds[competition.roundIndex] ?? [];
     // World Cup: show only the player's own group's two games this matchday.
     const round = grp
