@@ -14,7 +14,7 @@
 //   loose   — no carrier: the nearest chases, everyone else tracks the ball.
 
 import { Dir, type GameState, type Player } from './state';
-import { moveToward, kickToward, PLAYER_SPEED } from './player';
+import { moveToward, kickToward, integrate, PLAYER_SPEED } from './player';
 import { GROUND_FRICTION } from './ball';
 import { FIELD_T, FIELD_B, FIELD_L, FIELD_R, PLAY_W, CX, GOAL_W } from './world';
 
@@ -340,6 +340,46 @@ function assignSupportTargets(state: GameState, carrier: Player): void {
 
 // --- behaviours -------------------------------------------------------------
 
+// One frame of airborne-keeper physics: lateral coast + gravity until it lands.
+function stepDive(p: Player, dt: number): void {
+  p.prevX = p.x;
+  p.prevY = p.y;
+  p.x += p.vx * dt;
+  p.vz -= GK_GRAVITY * dt;
+  p.z += p.vz * dt;
+  if (p.z <= 0) {
+    p.z = 0;
+    p.vz = 0;
+    p.vx = 0;
+    p.state = 'idle';
+  }
+}
+
+// Advance player physics for one frame WITHOUT any AI/control decisions. Used
+// during non-play phases (post-goal celebration, dead-ball restarts) so bodies
+// keep moving naturally instead of freezing: a diving keeper falls and lands,
+// slides/knock-downs play out, and any residual run velocity coasts to a stop.
+export function coastPlayers(state: GameState, dt: number): void {
+  for (const p of state.players) {
+    if (p.stateTimer > 0) p.stateTimer = Math.max(0, p.stateTimer - dt);
+    if (p.state === 'gkdive') {
+      stepDive(p, dt);
+      continue;
+    }
+    // Friction so any leftover run/slide momentum settles smoothly.
+    p.vx *= Math.exp(-3 * dt);
+    p.vy *= Math.exp(-3 * dt);
+    if (Math.abs(p.vx) < 1) p.vx = 0;
+    if (Math.abs(p.vy) < 1) p.vy = 0;
+    // Let timed states (kick / slide / fallen) expire to idle as usual.
+    if (p.stateTimer <= 0 && (p.state === 'kick' || p.state === 'slide' || p.state === 'fallen')) {
+      p.state = 'idle';
+    }
+    if (p.vx === 0 && p.vy === 0 && p.state === 'run') p.state = 'idle';
+    integrate(p, dt);
+  }
+}
+
 export function updateTeamAi(state: GameState, dt: number): void {
   computeDuties(state);
   for (const p of state.players) {
@@ -530,17 +570,7 @@ function gkAi(state: GameState, p: Player, dt: number): void {
   // gravity until it lands. resolvePossession turns a body that reaches the low
   // ball into a catch on its own.
   if (p.state === 'gkdive') {
-    p.prevX = p.x;
-    p.prevY = p.y;
-    p.x += p.vx * dt;
-    p.vz -= GK_GRAVITY * dt;
-    p.z += p.vz * dt;
-    if (p.z <= 0) {
-      p.z = 0;
-      p.vz = 0;
-      p.vx = 0;
-      p.state = 'idle';
-    }
+    stepDive(p, dt);
     return;
   }
 

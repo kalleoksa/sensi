@@ -9,7 +9,7 @@ import { makeBall, stepBall, setPitch } from './ball';
 import { controlHuman, resolvePossession, resolveSlideTackles } from './player';
 import { makeMatch, updateMatch, startMatch, type Match } from './match';
 import { makeTeams } from './team';
-import { updateTeamAi } from './ai';
+import { updateTeamAi, coastPlayers } from './ai';
 import { makeRng } from './rng';
 import type { GameState, Player } from './state';
 import type { TeamDef } from './teams/data';
@@ -106,6 +106,11 @@ export function stepSession(s: Session, dt: number): void {
     updateTeamAi(state, dt);
     resolveSlideTackles(state);
     resolvePossession(state, dt);
+  } else {
+    // Not in open play (goal celebration, dead-ball setup, half/full-time):
+    // keep bodies moving naturally so the diving keeper falls instead of
+    // freezing in the air, and runners coast to a stop.
+    coastPlayers(state, dt);
   }
   stepBall(state.ball, dt);
   updateMatch(state, match, dt);

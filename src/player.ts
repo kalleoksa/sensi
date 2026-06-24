@@ -95,7 +95,7 @@ function isLocked(p: Player): boolean {
 }
 
 // Move + accumulate distance + world clamp. Call after velocities are set.
-function integrate(p: Player, dt: number): void {
+export function integrate(p: Player, dt: number): void {
   p.prevX = p.x;
   p.prevY = p.y;
   const dx = p.vx * dt;
