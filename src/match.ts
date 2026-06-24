@@ -218,6 +218,11 @@ function placeRestart(
       }
     }
   }
+  // If a team has been reduced to its keeper (e.g. multiple sendings-off), the
+  // keeper takes the restart rather than leaving the ball frozen.
+  if (!taker) {
+    taker = state.players.find((p) => p.team === team && p.role === 'gk' && !p.sentOff) ?? null;
+  }
   if (!taker) return;
 
   // Stand the taker at the spot: on the line for a throw-in (ball at the line,
@@ -281,6 +286,9 @@ function placePenalty(state: GameState, match: Match, team: 0 | 1): void {
       bestD = d;
       taker = p;
     }
+  }
+  if (!taker) {
+    taker = state.players.find((p) => p.team === team && p.role === 'gk' && !p.sentOff) ?? null;
   }
   if (!taker) return;
   taker.x = CX;
