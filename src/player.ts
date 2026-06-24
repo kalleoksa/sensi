@@ -14,7 +14,7 @@ import type { InputFrame } from './input';
 import { applyAftertouch } from './ball';
 import { emitSfx } from './audio';
 import { type RGB } from './sprites/palette';
-import { WORLD_W, WORLD_H } from './world';
+import { WORLD_W, WORLD_H, FIELD_T, FIELD_B, FIELD_L, FIELD_R, CX } from './world';
 
 export const PLAYER_SPEED = 72; // px/s; ~10s goal-to-goal over the 720px pitch
 const SLIDE_SPEED = 126; // 1.75x run speed, trimmed with PLAYER_SPEED
@@ -37,6 +37,14 @@ const SHOT_MAX = 392;
 const SHOT_LOFT = 190; // vz at full power
 const AFTERTOUCH_WINDOW = 0.34;
 const CONTROL_LOCK = 0.28;
+
+// Headers: an airborne ball at head height near an outfielder is nodded on.
+const HEAD_Z_MIN = 7; // below this the ball is controllable on the ground
+const HEAD_Z_MAX = 26; // above this it sails over everyone's heads
+const HEAD_R = 13; // horizontal reach to meet the ball
+const HEAD_SPEED = 165; // pace off the forehead
+const HEAD_JUMP = 78; // player's vertical pop when leaping to head
+const HEAD_GRAVITY = 360; // pulls the jumping header-er back down
 
 export interface PlayerInit {
   x: number;
@@ -91,6 +99,7 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 function isLocked(p: Player): boolean {
+  if (p.state === 'header') return true; // committed to the leap until he lands
   return p.stateTimer > 0 && (p.state === 'kick' || p.state === 'slide' || p.state === 'fallen');
 }
 
@@ -103,6 +112,16 @@ export function integrate(p: Player, dt: number): void {
   p.x = clamp(p.x + dx, 2, WORLD_W - 2);
   p.y = clamp(p.y + dy, 2, WORLD_H - 2);
   p.distance += Math.hypot(dx, dy);
+  // A header leap is a short vertical hop; bring the player back to the turf.
+  if (p.state === 'header') {
+    p.vz -= HEAD_GRAVITY * dt;
+    p.z += p.vz * dt;
+    if (p.z <= 0) {
+      p.z = 0;
+      p.vz = 0;
+      p.state = 'idle';
+    }
+  }
 }
 
 function startSlide(p: Player): void {
@@ -187,6 +206,60 @@ export function resolvePossession(state: GameState, dt: number): void {
   b.vy = best.vy + (leadY - b.y) * DRIBBLE_SPRING;
   b.owner = best;
   void dt;
+}
+
+// Headers: a ball flying at head height near an outfielder gets nodded on. An
+// attacker in the opponent half heads down at goal; otherwise the player heads
+// it clear, upfield and away from his own goal. The header-er does a short hop
+// (integrate brings him down) and is briefly committed to the leap.
+export function resolveHeaders(state: GameState): void {
+  const b = state.ball;
+  if (b.controlLock > 0 || b.z < HEAD_Z_MIN || b.z > HEAD_Z_MAX) return;
+
+  let best: Player | null = null;
+  let bestD = HEAD_R;
+  for (const p of state.players) {
+    if (p.role === 'gk') continue; // keepers catch/dive, they don't head
+    if (p.state === 'fallen' || p.state === 'slide' || p.state === 'header') continue;
+    const d = Math.hypot(p.x - b.x, p.y - b.y);
+    if (d < bestD) {
+      bestD = d;
+      best = p;
+    }
+  }
+  if (!best) return;
+
+  const oppGoalY = best.attacksTop ? FIELD_T : FIELD_B;
+  const ownGoalY = best.attacksTop ? FIELD_B : FIELD_T;
+  const attacking = Math.abs(b.y - oppGoalY) < Math.abs(b.y - ownGoalY);
+
+  let tx: number;
+  let ty: number;
+  let lift: number;
+  if (attacking) {
+    tx = CX; // head down toward the goal
+    ty = oppGoalY;
+    lift = -25;
+  } else {
+    tx = b.x < CX ? FIELD_L + 20 : FIELD_R - 20; // clear to the nearer flank
+    ty = (FIELD_T + FIELD_B) / 2; // and upfield toward midfield
+    lift = 55;
+  }
+  const dx = tx - best.x;
+  const dy = ty - best.y;
+  const d = Math.hypot(dx, dy) || 1;
+  b.vx = (dx / d) * HEAD_SPEED;
+  b.vy = (dy / d) * HEAD_SPEED;
+  b.vz = lift;
+  b.spin = 0;
+  b.aftertouch = 0;
+  b.controlLock = 0.2;
+  b.owner = best;
+
+  best.dir = dirFromVec(dx, dy);
+  best.state = 'header';
+  best.vz = HEAD_JUMP;
+  emitSfx('pass', 0.7);
 }
 
 // Slide tackles knock down opponents they slide into: the opponent falls

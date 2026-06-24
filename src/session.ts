@@ -6,7 +6,7 @@
 import { VIEW_W, VIEW_H, makeCamera, updateCamera, FIELD_T, FIELD_B, CX } from './world';
 import { consumeInputs } from './input';
 import { makeBall, stepBall, setPitch } from './ball';
-import { controlHuman, resolvePossession, resolveSlideTackles } from './player';
+import { controlHuman, resolvePossession, resolveSlideTackles, resolveHeaders } from './player';
 import { makeMatch, updateMatch, startMatch, type Match } from './match';
 import { makeTeams } from './team';
 import { updateTeamAi, coastPlayers } from './ai';
@@ -105,6 +105,7 @@ export function stepSession(s: Session, dt: number): void {
     }
     updateTeamAi(state, dt);
     resolveSlideTackles(state);
+    resolveHeaders(state);
     resolvePossession(state, dt);
   } else {
     // Not in open play (goal celebration, dead-ball setup, half/full-time):
