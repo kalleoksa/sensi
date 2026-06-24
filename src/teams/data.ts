@@ -135,7 +135,7 @@ export const TEAMS: TeamDef[] = [
 
   // --- Africa (CAF: 10 at WC26, + Cameroon/Nigeria who didn't qualify) ---
   { id: 'rsa', name: 'SOUTH AFRICA', short: 'RSA', continent: 'AFRICA', group: 'A', kit: { shirt: hx('#007749'), shorts: WHITE, socks: hx('#007749') } },
-  { id: 'mar', name: 'MOROCCO', short: 'MAR', continent: 'AFRICA', group: 'C', kit: { shirt: hx('#C1272D'), shorts: hx('#C1272D'), socks: hx('#C1272D') } },
+  { id: 'mar', name: 'MOROCCO', short: 'MAR', continent: 'AFRICA', group: 'C', kit: { shirt: hx('#C1272D'), shorts: hx('#006233'), socks: hx('#C1272D') } },
   { id: 'civ', name: 'IVORY COAST', short: 'CIV', continent: 'AFRICA', group: 'E', kit: { shirt: hx('#FF8200'), shorts: hx('#FF8200'), socks: hx('#FF8200') } },
   { id: 'tun', name: 'TUNISIA', short: 'TUN', continent: 'AFRICA', group: 'F', kit: { shirt: hx('#E70013'), shorts: WHITE, socks: hx('#E70013') } },
   { id: 'egy', name: 'EGYPT', short: 'EGY', continent: 'AFRICA', group: 'G', kit: { shirt: hx('#CE1126'), shorts: WHITE, socks: hx('#CE1126') } },
