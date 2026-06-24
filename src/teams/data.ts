@@ -49,9 +49,52 @@ const GREEN = rgb(28, 140, 64);
 const YELLOW = rgb(240, 206, 44);
 const AZZURRI = rgb(34, 92, 170);
 
-// Keepers wear this unless a team overrides it (distinct green so they read
-// apart from outfielders, matching the previous hard-coded keeper kit).
-export const DEFAULT_GK_KIT: Kit = { shirt: rgb(40, 150, 78), shorts: BLACK, socks: BLACK };
+// Goalkeeper kits use a small stock pool (as the original did) picked per match
+// to contrast with both outfield shirts and the pitch — the real FIFA rule.
+// Green/yellow are deliberately absent: they blend with the grass.
+export const GK_COLORS: RGB[] = [
+  rgb(26, 26, 26), // black — default, contrasts with almost everything
+  rgb(224, 0, 122), // magenta — when both teams wear dark
+  rgb(255, 105, 0), // orange — when both teams wear light
+  rgb(0, 194, 199), // cyan — secondary bright option
+];
+
+const PITCH_TONE: RGB = [151, 176, 33]; // approx grass; keepers must not blend in
+
+function colorDist2(a: RGB, b: RGB): number {
+  const dr = a[0] - b[0];
+  const dg = a[1] - b[1];
+  const db = a[2] - b[2];
+  return dr * dr + dg * dg + db * db;
+}
+
+// Stock GK colour with the greatest minimum distance from every colour in
+// `avoid` (the two outfield shirts, the pitch, and the other keeper).
+export function pickGoalkeeperColor(avoid: RGB[]): RGB {
+  let best = GK_COLORS[0];
+  let bestScore = -1;
+  for (const c of GK_COLORS) {
+    let minD = Infinity;
+    for (const a of avoid) minD = Math.min(minD, colorDist2(c, a));
+    if (minD > bestScore) {
+      bestScore = minD;
+      best = c;
+    }
+  }
+  return best;
+}
+
+// Keeper kits for a match: each contrasts with both shirts and the pitch, and
+// the two keepers differ from each other. A team's explicit gkKit overrides this.
+export function goalkeeperKits(homeShirt: RGB, awayShirt: RGB): { home: Kit; away: Kit } {
+  const avoid = [homeShirt, awayShirt, PITCH_TONE];
+  const h = pickGoalkeeperColor(avoid);
+  const a = pickGoalkeeperColor([...avoid, h]);
+  return {
+    home: { shirt: h, shorts: BLACK, socks: BLACK },
+    away: { shirt: a, shorts: BLACK, socks: BLACK },
+  };
+}
 
 export const TEAMS: TeamDef[] = [
   // --- Europe (UEFA: 16 at WC26, + Italy/Ireland who didn't qualify) ---
