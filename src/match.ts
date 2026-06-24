@@ -28,7 +28,7 @@ const KICKOFF_READY = 1.0; // ready freeze before a kickoff is released to play
 const HALFTIME_PAUSE = 2.5; // HALF TIME overlay before the second-half kickoff
 const HALF_LENGTH = 90; // seconds per half (SWOS-style 3-minute default match)
 
-type RestartKind = 'throw' | 'goalkick' | 'corner';
+type RestartKind = 'throw' | 'goalkick' | 'corner' | 'freekick';
 
 interface Restart {
   kind: RestartKind;
@@ -202,7 +202,7 @@ function placeRestart(
   if (!taker) {
     let bestD = Infinity;
     for (const p of state.players) {
-      if (p.team !== team || p.role === 'gk') continue;
+      if (p.team !== team || p.role === 'gk' || p.state === 'fallen') continue;
       const d = Math.hypot(p.x - x, p.y - y);
       if (d < bestD) {
         bestD = d;
@@ -265,10 +265,17 @@ function deliverRestart(state: GameState, match: Match): void {
   } else if (r.kind === 'goalkick') {
     const midY = (FIELD_T + FIELD_B) / 2;
     kickToward(state, t, CX + (b.x < CX ? 50 : -50), midY, 310, 120); // long punt
-  } else {
+  } else if (r.kind === 'corner') {
     // Corner: cross toward the penalty spot of that end.
     const spotY = b.y < (FIELD_T + FIELD_B) / 2 ? FIELD_T + PEN_SPOT_D : FIELD_B - PEN_SPOT_D;
     kickToward(state, t, CX, spotY, 250, 105);
+  } else {
+    // Free kick: play it forward to the best teammate, else upfield toward the
+    // opponent goal the taker attacks.
+    const fwd = t.team === 0 ? FIELD_T + 100 : FIELD_B - 100;
+    const tx = target ? target.x : CX;
+    const ty = target ? target.y : fwd;
+    kickToward(state, t, tx, ty, 235, 70);
   }
 }
 
@@ -343,6 +350,17 @@ export function updateMatch(state: GameState, match: Match, dt: number): void {
   }
 
   const b = state.ball;
+
+  // Referee: a mistimed slide flagged a foul. Whistle and award a free kick to
+  // the fouled team at the foul spot (clamped inside the field).
+  if (state.foul) {
+    const f = state.foul;
+    state.foul = null;
+    const fx = Math.min(FIELD_R - 4, Math.max(FIELD_L + 4, f.x));
+    const fy = Math.min(FIELD_B - 4, Math.max(FIELD_T + 4, f.y));
+    placeRestart(state, match, fx, fy, f.team, 'freekick');
+    return;
+  }
 
   // Ball already over a line and rolling out in the run-off: hold the whistle
   // until it settles, then set up the throw-in / goal kick / corner where it
