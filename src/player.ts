@@ -31,6 +31,18 @@ const TACKLE_R = 8; // an opponent this close to the carrier pokes the ball loos
 const SLIDE_BALL_R = 20; // a sliding lunge (legs out) within this of the ball wins it
 const SLIDE_HIT_R = 9; // a slide within this of an opponent makes contact
 
+// Standing tackle (a quick on-feet poke) vs the committed slide: tap the action
+// button to poke, hold it past SLIDE_HOLD to commit to a slide.
+const SLIDE_HOLD = 0.2; // seconds of holding action before a defender slides
+const POKE_REACH = 14; // a poking defender's reach to the carrier (vs TACKLE_R otherwise)
+const POKE_WINDOW = 0.18; // how long the extended poke reach stays live
+const POKE_LOCK = 0.14; // the brief plant while reaching in
+
+// Pressure: a carrier with a defender tight to him takes a heavier touch — the
+// ball is pushed further ahead, where closing down (or a poke) can win it.
+const PRESSURE_R = 20; // a defender within this is "pressing" the carrier
+const PRESSURE_LEAD = 6; // extra dribble lead at maximum pressure (heavy touch)
+
 // Kick tuning.
 const TAP_CHARGE = 0.16; // below this hold time, it's a pass not a shot
 const MAX_CHARGE = 0.7;
@@ -92,6 +104,7 @@ export function makePlayer(init: PlayerInit): Player {
     charging: false,
     charge: 0,
     bufferedTap: 0,
+    pokeTimer: 0,
     slideCooldown: 0,
     yellow: false,
     sentOff: false,
@@ -149,6 +162,18 @@ export function startSlideToward(p: Player, tx: number, ty: number): void {
   startSlide(p);
 }
 
+// Standing tackle: a quick on-feet poke. Plants briefly and opens an
+// extended-reach window (POKE_REACH) so resolvePossession can nick the ball off
+// a nearby carrier — low risk, no going to ground, no foul.
+function standTackle(p: Player): void {
+  p.state = 'kick'; // leg-out reach pose
+  p.stateTimer = POKE_LOCK;
+  p.pokeTimer = POKE_WINDOW;
+  p.vx = 0;
+  p.vy = 0;
+  emitSfx('tackle', 0.45);
+}
+
 function strike(state: GameState, p: Player, charge: number): void {
   const b = state.ball;
   const [fx, fy] = DIR_VEC[p.dir];
@@ -197,11 +222,17 @@ export function resolvePossession(state: GameState, dt: number): void {
   state.carrier = best;
   if (!best) return;
 
-  // Tackle: an opponent closing to within TACKLE_R pokes the ball loose, away
-  // along their movement direction, so it becomes a 50/50 both can chase.
+  // Tackle: an opponent closing to within reach pokes the ball loose along his
+  // movement direction (a 50/50 both can chase). A standing-tackle poke extends
+  // that reach (POKE_REACH) so you can nick it without a slide. Also track the
+  // nearest presser, to apply pressure to the carrier's touch below.
+  let pressDist = Infinity;
   for (const o of state.players) {
-    if (o.team === best.team || o.state === 'fallen') continue;
-    if (Math.hypot(o.x - best.x, o.y - best.y) < TACKLE_R) {
+    if (o.team === best.team || o.state === 'fallen' || o.sentOff) continue;
+    const d = Math.hypot(o.x - best.x, o.y - best.y);
+    if (d < pressDist) pressDist = d;
+    const reach = o.pokeTimer > 0 ? POKE_REACH : TACKLE_R;
+    if (d < reach) {
       const [ox, oy] = DIR_VEC[o.dir];
       b.vx = ox * 112;
       b.vy = oy * 112;
@@ -214,10 +245,13 @@ export function resolvePossession(state: GameState, dt: number): void {
   }
 
   // Dribble: hold the ball a short lead ahead of the feet (spring), carried at
-  // the player's velocity. Sticky but a kick (controlLock) or tackle frees it.
+  // the player's velocity. Under pressure the touch grows heavier — the ball is
+  // pushed further ahead, so a defender closing from the front/side can win it.
   const [fx, fy] = DIR_VEC[best.dir];
-  const leadX = best.x + fx * DRIBBLE_LEAD;
-  const leadY = best.y + fy * DRIBBLE_LEAD;
+  let lead = DRIBBLE_LEAD;
+  if (pressDist < PRESSURE_R) lead += (1 - pressDist / PRESSURE_R) * PRESSURE_LEAD;
+  const leadX = best.x + fx * lead;
+  const leadY = best.y + fy * lead;
   b.vx = best.vx + (leadX - b.x) * DRIBBLE_SPRING;
   b.vy = best.vy + (leadY - b.y) * DRIBBLE_SPRING;
   b.owner = best;
@@ -323,9 +357,10 @@ export function resolveSlideTackles(state: GameState): void {
 
 // Drive the human-controlled player from the input frame.
 export function controlHuman(state: GameState, p: Player, input: InputFrame, dt: number): void {
-  // Tick down lock + buffer.
+  // Tick down lock + buffer + poke-reach window.
   if (p.stateTimer > 0) p.stateTimer = Math.max(0, p.stateTimer - dt);
   if (p.bufferedTap > 0) p.bufferedTap = Math.max(0, p.bufferedTap - dt);
+  if (p.pokeTimer > 0) p.pokeTimer = Math.max(0, p.pokeTimer - dt);
 
   const locked = isLocked(p);
   const isCarrier = state.carrier === p;
@@ -363,21 +398,24 @@ export function controlHuman(state: GameState, p: Player, input: InputFrame, dt:
   if (input.pressed && locked) p.bufferedTap = 0.08;
 
   if (pressed && !locked) {
+    // Start charging: a carrier builds shot power; a defender arms a tackle
+    // (tap on release = standing poke, hold past SLIDE_HOLD = committed slide).
     p.bufferedTap = 0;
-    if (isCarrier) {
-      p.charging = true;
-      p.charge = 0;
-    } else {
-      startSlide(p);
-    }
+    p.charging = true;
+    p.charge = 0;
   }
   if (p.charging) {
     if (input.down) {
       p.charge = Math.min(MAX_CHARGE + 0.1, p.charge + dt);
+      if (!isCarrier && p.charge >= SLIDE_HOLD) {
+        p.charging = false;
+        startSlide(p);
+      }
     } else {
       // Released.
       p.charging = false;
-      strike(state, p, p.charge);
+      if (isCarrier) strike(state, p, p.charge);
+      else standTackle(p);
     }
   }
 
