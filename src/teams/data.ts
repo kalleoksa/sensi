@@ -107,7 +107,7 @@ export const TEAMS: TeamDef[] = [
   { id: 'cze', name: 'CZECHIA', short: 'CZE', continent: 'EUROPE', group: 'A', kit: { shirt: hx('#D7141A'), shorts: hx('#11457E'), socks: hx('#D7141A') } },
   { id: 'bih', name: 'BOSNIA', short: 'BIH', continent: 'EUROPE', group: 'B', kit: { shirt: hx('#1B1464'), shorts: hx('#1B1464'), socks: hx('#1B1464'), pattern: 'band', accent: hx('#FFD100') } },
   { id: 'sui', name: 'SWITZERLAND', short: 'SUI', continent: 'EUROPE', group: 'B', kit: { shirt: hx('#DA291C'), shorts: WHITE, socks: hx('#DA291C') } },
-  { id: 'sco', name: 'SCOTLAND', short: 'SCO', continent: 'EUROPE', group: 'C', kit: { shirt: hx('#0A285F'), shorts: WHITE, socks: hx('#0A285F') } },
+  { id: 'sco', name: 'SCOTLAND', short: 'SCO', continent: 'EUROPE', group: 'C', kit: { shirt: hx('#0A285F'), shorts: hx('#0A285F'), socks: hx('#0A285F') } },
   { id: 'tur', name: 'TURKEY', short: 'TUR', continent: 'EUROPE', group: 'D', kit: { shirt: hx('#E30A17'), shorts: WHITE, socks: hx('#E30A17') } },
   { id: 'bel', name: 'BELGIUM', short: 'BEL', continent: 'EUROPE', group: 'G', kit: { shirt: hx('#E30613'), shorts: BLACK, socks: hx('#E30613') } },
   { id: 'nor', name: 'NORWAY', short: 'NOR', continent: 'EUROPE', group: 'I', kit: { shirt: hx('#BA0C2F'), shorts: hx('#00205B'), socks: hx('#BA0C2F') } },
@@ -118,7 +118,7 @@ export const TEAMS: TeamDef[] = [
   { id: 'irl', name: 'IRELAND', short: 'IRL', continent: 'EUROPE', kit: { shirt: GREEN, shorts: WHITE, socks: GREEN } },
 
   // --- South America (CONMEBOL: 6) ---
-  { id: 'bra', name: 'BRAZIL', short: 'BRA', continent: 'S. AMERICA', group: 'C', kit: { shirt: hx('#FFDF00'), shorts: hx('#002776'), socks: WHITE } },
+  { id: 'bra', name: 'BRAZIL', short: 'BRA', continent: 'S. AMERICA', group: 'C', kit: { shirt: hx('#FFDF00'), shorts: WHITE, socks: WHITE } },
   { id: 'par', name: 'PARAGUAY', short: 'PAR', continent: 'S. AMERICA', group: 'D', kit: { shirt: hx('#D52B1E'), shorts: hx('#0038A8'), socks: WHITE, pattern: 'stripes', accent: WHITE } },
   { id: 'ecu', name: 'ECUADOR', short: 'ECU', continent: 'S. AMERICA', group: 'E', kit: { shirt: hx('#FFD100'), shorts: hx('#003893'), socks: hx('#FFD100') } },
   { id: 'uru', name: 'URUGUAY', short: 'URU', continent: 'S. AMERICA', group: 'H', kit: { shirt: hx('#5CBFEB'), shorts: BLACK, socks: hx('#5CBFEB') } },
