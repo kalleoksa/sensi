@@ -34,6 +34,8 @@ function drawPlayer(
     shorts: p.kitShorts,
     socks: p.kitSocks,
     hair: p.hair,
+    pattern: p.kitPattern,
+    accent: p.kitAccent,
   });
   const frame =
     p.state === 'run' ? runFrame(p.distance) : p.state === 'gkdive' ? (p.vz > 0 ? 0 : 1) : 0;

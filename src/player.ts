@@ -7,6 +7,7 @@ import {
   type GameState,
   type Dir8,
   type Role,
+  type KitPattern,
   DIR_VEC,
   dirFromVec,
 } from './state';
@@ -57,6 +58,8 @@ export interface PlayerInit {
   shirt: RGB;
   shorts: RGB;
   socks: RGB;
+  pattern?: KitPattern;
+  accent?: RGB;
   hair: RGB;
 }
 
@@ -95,6 +98,8 @@ export function makePlayer(init: PlayerInit): Player {
     kitShirt: init.shirt,
     kitShorts: init.shorts,
     kitSocks: init.socks,
+    kitPattern: init.pattern ?? 'solid',
+    kitAccent: init.accent ?? init.shirt,
     hair: init.hair,
   };
 }

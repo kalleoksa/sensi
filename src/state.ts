@@ -38,6 +38,11 @@ export function dirFromVec(dx: number, dy: number): Dir8 {
 }
 
 export type PlayerState = 'idle' | 'run' | 'kick' | 'header' | 'slide' | 'fallen' | 'gkdive';
+
+// Shirt pattern for kit rendering. 'stripes' (vertical) and 'check' only render
+// on chest-facing frames (front/back); the pure side view falls back to solid,
+// SWOS-style. 'sleeves' tints the shirt's outer edges with the accent (trim).
+export type KitPattern = 'solid' | 'stripes' | 'check' | 'sleeves';
 export type Role = 'gk' | 'def' | 'mid' | 'fwd';
 
 // Per-tick AI duty, assigned by computeDuties() in ai.ts. Transient: recomputed
@@ -88,6 +93,8 @@ export interface Player {
   kitShirt: RGB;
   kitShorts: RGB;
   kitSocks: RGB;
+  kitPattern: KitPattern; // shirt pattern (default 'solid')
+  kitAccent: RGB; // second colour for stripes/check/sleeves trim
   hair: RGB;
 }
 

@@ -6,11 +6,14 @@
 // Paraguay…) are rendered as their dominant solid colour for now.
 
 import type { RGB } from '../sprites/palette';
+import type { KitPattern } from '../state';
 
 export interface Kit {
   shirt: RGB;
   shorts: RGB;
   socks: RGB;
+  pattern?: KitPattern; // shirt pattern; defaults to solid
+  accent?: RGB; // second colour for the pattern/trim (defaults to shirt)
 }
 
 export type Continent = 'EUROPE' | 'S. AMERICA' | 'N. AMERICA' | 'AFRICA' | 'ASIA' | 'OCEANIA';
@@ -74,16 +77,16 @@ export const TEAMS: TeamDef[] = [
   { id: 'nor', name: 'NORWAY', short: 'NOR', continent: 'EUROPE', group: 'I', kit: { shirt: RED, shorts: WHITE, socks: NAVY } },
   { id: 'aut', name: 'AUSTRIA', short: 'AUT', continent: 'EUROPE', group: 'J', kit: { shirt: RED, shorts: WHITE, socks: RED } },
   { id: 'por', name: 'PORTUGAL', short: 'POR', continent: 'EUROPE', group: 'K', kit: { shirt: CRIMSON, shorts: DKGREEN, socks: CRIMSON } },
-  { id: 'cro', name: 'CROATIA', short: 'CRO', continent: 'EUROPE', group: 'L', kit: { shirt: RED, shorts: WHITE, socks: NAVY } },
+  { id: 'cro', name: 'CROATIA', short: 'CRO', continent: 'EUROPE', group: 'L', kit: { shirt: WHITE, shorts: NAVY, socks: WHITE, pattern: 'check', accent: RED } },
   { id: 'ita', name: 'ITALY', short: 'ITA', continent: 'EUROPE', kit: { shirt: AZZURRI, shorts: WHITE, socks: AZZURRI } },
   { id: 'irl', name: 'IRELAND', short: 'IRL', continent: 'EUROPE', kit: { shirt: GREEN, shorts: WHITE, socks: GREEN } },
 
   // --- South America (CONMEBOL: 6) ---
-  { id: 'bra', name: 'BRAZIL', short: 'BRA', continent: 'S. AMERICA', group: 'C', kit: { shirt: BRA_YELLOW, shorts: BLUE, socks: WHITE } },
-  { id: 'par', name: 'PARAGUAY', short: 'PAR', continent: 'S. AMERICA', group: 'D', kit: { shirt: RED, shorts: NAVY, socks: NAVY } },
+  { id: 'bra', name: 'BRAZIL', short: 'BRA', continent: 'S. AMERICA', group: 'C', kit: { shirt: BRA_YELLOW, shorts: NAVY, socks: WHITE, pattern: 'sleeves', accent: GREEN } },
+  { id: 'par', name: 'PARAGUAY', short: 'PAR', continent: 'S. AMERICA', group: 'D', kit: { shirt: RED, shorts: NAVY, socks: NAVY, pattern: 'stripes', accent: WHITE } },
   { id: 'ecu', name: 'ECUADOR', short: 'ECU', continent: 'S. AMERICA', group: 'E', kit: { shirt: YELLOW, shorts: NAVY, socks: RED } },
   { id: 'uru', name: 'URUGUAY', short: 'URU', continent: 'S. AMERICA', group: 'H', kit: { shirt: CELESTE, shorts: BLACK, socks: BLACK } },
-  { id: 'arg', name: 'ARGENTINA', short: 'ARG', continent: 'S. AMERICA', group: 'J', kit: { shirt: SKY, shorts: BLACK, socks: WHITE } },
+  { id: 'arg', name: 'ARGENTINA', short: 'ARG', continent: 'S. AMERICA', group: 'J', kit: { shirt: SKY, shorts: NAVY, socks: WHITE, pattern: 'stripes', accent: WHITE } },
   { id: 'col', name: 'COLOMBIA', short: 'COL', continent: 'S. AMERICA', group: 'K', kit: { shirt: YELLOW, shorts: NAVY, socks: RED } },
 
   // --- North America (CONCACAF: 3 hosts + 3 qualifiers) ---

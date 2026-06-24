@@ -13,7 +13,7 @@ import {
   WHITE,
   type RGB,
 } from './palette';
-import { Dir, type Dir8, type PlayerState } from '../state';
+import { Dir, type Dir8, type PlayerState, type KitPattern } from '../state';
 
 export const CELL_W = 12;
 export const CELL_H = 16;
@@ -26,6 +26,8 @@ export interface PlayerColors {
   socks: RGB;
   hair: RGB;
   skin: RGB;
+  pattern?: KitPattern;
+  accent?: RGB;
 }
 
 export interface Atlas {
@@ -97,9 +99,28 @@ function head(f: Facing, hair: RGB, skin: RGB): Px[] {
 
 // --- Torso + arms (rows 4..7) ---------------------------------------------
 // armL/armR give the row (4..6) of each hand for the counter-swing.
+// Per-pixel shirt colour for the torso, given the kit pattern + facing. Stripes
+// and checks only render on chest-facing frames (front/back/diagonal); the pure
+// side view ('R') falls back to solid so a few-px-wide body doesn't turn to
+// mush. 'sleeves' tints the shirt's outer edge on every facing (trim).
+type ShirtPaint = (x: number, y: number) => RGB;
+function shirtPainter(col: PlayerColors, f: Facing): ShirtPaint {
+  const base = col.shirt;
+  const acc = col.accent ?? base;
+  const pat = col.pattern ?? 'solid';
+  if (pat === 'sleeves') {
+    // Outer pixel of each shirt row is the accent (row 4 spans x0..5, row 5 x1..4).
+    return (x, y) => ((y === 4 ? x === 0 || x === 5 : x === 1 || x === 4) ? acc : base);
+  }
+  if (f === 'R' || pat === 'solid') return () => base;
+  if (pat === 'stripes') return (x) => (x % 2 === 0 ? base : acc); // vertical bands
+  if (pat === 'check') return (x, y) => ((x + y) % 2 === 0 ? base : acc);
+  return () => base;
+}
+
 function torso(
   f: Facing,
-  shirt: RGB,
+  shirtAt: ShirtPaint,
   shorts: RGB,
   skin: RGB,
   armL: number,
@@ -108,14 +129,14 @@ function torso(
   const px: Px[] = [];
   const add = (x: number, y: number, c: RGB) => px.push({ x, y, c });
   for (let x = 1; x <= 4; x++) {
-    add(x, 4, shirt);
-    add(x, 5, shirt);
+    add(x, 4, shirtAt(x, 4));
+    add(x, 5, shirtAt(x, 5));
   }
-  add(0, 4, shirt); // shoulders
-  add(5, 4, shirt);
+  add(0, 4, shirtAt(0, 4)); // shoulders
+  add(5, 4, shirtAt(5, 4));
   // Side/diagonal facings: narrow the trailing shoulder a touch.
   if (f === 'R') {
-    add(5, 4, shirt);
+    add(5, 4, shirtAt(5, 4));
   }
   add(0, armL, skin); // hands
   add(5, armR, skin);
@@ -388,7 +409,7 @@ function buildCell(
   }
   const px: Px[] = [
     ...head(f, col.hair, col.skin),
-    ...torso(f, col.shirt, col.shorts, col.skin, armL, armR),
+    ...torso(f, shirtPainter(col, f), col.shorts, col.skin, armL, armR),
   ];
   if (state === 'kick') {
     px.push(...kickLeg(fdx, fdy, col.socks, col.skin));
@@ -435,7 +456,8 @@ const cache = new Map<string, Atlas>();
 
 function colorKey(c: PlayerColors): string {
   const j = (v: RGB) => v.join(',');
-  return `${j(c.shirt)}|${j(c.shorts)}|${j(c.socks)}|${j(c.hair)}|${j(c.skin)}`;
+  const acc = c.accent ? j(c.accent) : '-';
+  return `${j(c.shirt)}|${j(c.shorts)}|${j(c.socks)}|${j(c.hair)}|${j(c.skin)}|${c.pattern ?? 'solid'}|${acc}`;
 }
 
 export function buildAtlas(colorsIn: Partial<PlayerColors> & Pick<PlayerColors, 'shirt' | 'shorts' | 'socks' | 'hair'>): Atlas {

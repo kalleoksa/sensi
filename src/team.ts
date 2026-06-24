@@ -46,6 +46,8 @@ function makeTeam(team: 0 | 1, def: TeamDef, slots: Slot[], rng: Rng): Player[] 
       shirt: kit.shirt,
       shorts: kit.shorts,
       socks: kit.socks,
+      pattern: kit.pattern,
+      accent: kit.accent,
       hair: slot.role === 'gk' ? HAIR_DARK : rng.pick(HAIRS),
     };
     const p = makePlayer(init);
