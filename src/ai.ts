@@ -556,7 +556,10 @@ function carrierAi(state: GameState, p: Player, dt: number): void {
   let tx = CX;
   const ty = goalY - fs * 16;
   if (opp && d < DRIBBLE_AVOID) {
-    const side = p.x <= opp.x ? -1 : 1; // step to the side away from the defender
+    // Step around the defender — but when we're already wide, cut back toward
+    // the centre so we don't dribble into the corner and get pinned on the line.
+    const wide = Math.abs(p.x - CX) > PLAY_W * 0.28;
+    const side = wide ? Math.sign(CX - p.x) || -1 : p.x <= opp.x ? -1 : 1;
     tx = clamp(p.x + side * 30, FIELD_L + 8, FIELD_R - 8);
   }
   moveToward(p, tx, ty, dt, AI_SPEED);
