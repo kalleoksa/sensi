@@ -18,6 +18,8 @@ import {
   GOAL_W,
   SIX_BOX_D,
   PEN_SPOT_D,
+  PEN_BOX_D,
+  PEN_BOX_W,
   CORNER_R,
 } from './world';
 
@@ -28,7 +30,7 @@ const KICKOFF_READY = 1.0; // ready freeze before a kickoff is released to play
 const HALFTIME_PAUSE = 2.5; // HALF TIME overlay before the second-half kickoff
 const HALF_LENGTH = 90; // seconds per half (SWOS-style 3-minute default match)
 
-type RestartKind = 'throw' | 'goalkick' | 'corner' | 'freekick';
+type RestartKind = 'throw' | 'goalkick' | 'corner' | 'freekick' | 'penalty';
 
 interface Restart {
   kind: RestartKind;
@@ -53,6 +55,9 @@ export interface Match {
   // the whistle + restart are held off until outTimer elapses (see updateMatch).
   outBall: { kind: RestartKind; team: 0 | 1; x: number; y: number } | null;
   outTimer: number;
+  // Brief HUD card flash after a booking / sending-off.
+  cardFlash: number;
+  cardColor: 'yellow' | 'red' | null;
 }
 
 const RESTART_DEAD = 0.8; // brief pause to set up a throw-in / goal kick / corner
@@ -73,6 +78,8 @@ export function makeMatch(): Match {
     firstKickoffTeam: 1,
     outBall: null,
     outTimer: 0,
+    cardFlash: 0,
+    cardColor: null,
   };
 }
 
@@ -97,6 +104,7 @@ export function resetKickoff(state: GameState): void {
   b.controlLock = 0;
   b.owner = null;
   for (const p of state.players) {
+    if (p.sentOff) continue; // stays off the pitch, a man down
     p.x = p.homeX;
     p.y = p.homeY;
     p.prevX = p.x;
@@ -120,7 +128,7 @@ export function beginKickoff(state: GameState, match: Match, kickoffTeam: 0 | 1)
   let taker: Player | null = null;
   let bestD = Infinity;
   for (const p of state.players) {
-    if (p.team !== kickoffTeam || p.role === 'gk') continue;
+    if (p.team !== kickoffTeam || p.role === 'gk' || p.sentOff) continue;
     const d = Math.hypot(p.x - state.ball.x, p.y - state.ball.y);
     if (d < bestD) {
       bestD = d;
@@ -202,7 +210,7 @@ function placeRestart(
   if (!taker) {
     let bestD = Infinity;
     for (const p of state.players) {
-      if (p.team !== team || p.role === 'gk' || p.state === 'fallen') continue;
+      if (p.team !== team || p.role === 'gk' || p.state === 'fallen' || p.sentOff) continue;
       const d = Math.hypot(p.x - x, p.y - y);
       if (d < bestD) {
         bestD = d;
@@ -234,6 +242,107 @@ function placeRestart(
   emitSfx('whistleOut');
 }
 
+// Whether (x,y) is inside the penalty box in front of the goal `attacksTop`
+// attacks (i.e. the box the defending team would concede a penalty in).
+function inPenaltyBox(x: number, y: number, attackTop: boolean): boolean {
+  const goalLine = attackTop ? FIELD_T : FIELD_B;
+  return Math.abs(x - CX) < PEN_BOX_W / 2 && Math.abs(y - goalLine) < PEN_BOX_D;
+}
+
+// Set up a penalty: ball on the spot, the taker behind it, the defending keeper
+// on his line, and everyone else cleared out of the box. The kick is taken when
+// the dead pause ends (deliverRestart).
+function placePenalty(state: GameState, match: Match, team: 0 | 1): void {
+  const attackTop = attacksTop(team, match.half);
+  const goalLine = attackTop ? FIELD_T : FIELD_B;
+  const into = attackTop ? 1 : -1; // direction from the goal line into the field
+  const spotY = goalLine + into * PEN_SPOT_D;
+
+  const b = state.ball;
+  b.x = CX;
+  b.y = spotY;
+  b.z = 0;
+  b.prevX = b.x;
+  b.prevY = b.y;
+  b.prevZ = 0;
+  b.vx = b.vy = b.vz = b.spin = 0;
+  b.aftertouch = 0;
+  b.controlLock = RESTART_LOCK;
+  b.owner = null;
+  state.carrier = null;
+
+  // Taker: nearest outfielder of the awarded team, stood just behind the ball.
+  let taker: Player | null = null;
+  let bestD = Infinity;
+  for (const p of state.players) {
+    if (p.team !== team || p.role === 'gk' || p.state === 'fallen' || p.sentOff) continue;
+    const d = Math.hypot(p.x - CX, p.y - spotY);
+    if (d < bestD) {
+      bestD = d;
+      taker = p;
+    }
+  }
+  if (!taker) return;
+  taker.x = CX;
+  taker.y = spotY + into * 6; // a step behind the ball
+  taker.prevX = taker.x;
+  taker.prevY = taker.y;
+  taker.vx = taker.vy = 0;
+  taker.state = 'idle';
+
+  // Everyone else (bar the two keepers) waits outside the box, behind the spot.
+  for (const p of state.players) {
+    if (p === taker || p.role === 'gk' || p.sentOff) continue;
+    if (inPenaltyBox(p.x, p.y, attackTop)) {
+      p.y = goalLine + into * (PEN_BOX_D + 10);
+      p.prevY = p.y;
+      p.vx = p.vy = 0;
+      if (p.state !== 'fallen') p.state = 'idle';
+    }
+  }
+
+  match.phase = 'dead';
+  match.deadTimer = RESTART_DEAD;
+  match.deadReset = false;
+  match.restart = { kind: 'penalty', taker };
+  emitSfx('whistleOut');
+}
+
+const CARD_FLASH = 1.4; // seconds the card shows on the HUD
+
+// Judge a card on the offending player. A foul is bookable if it concedes a
+// penalty or is a cynical foul (stopped the carrier) in the offender's
+// defensive third. A second booking is a red — the player is sent off and
+// walks to the touchline, out of play.
+function judgeCard(
+  match: Match,
+  foul: { offender: Player; deniedAttack: boolean; y: number },
+  isPenalty: boolean,
+): void {
+  const off = foul.offender;
+  const ownGoal = attacksTop(off.team, match.half) ? FIELD_B : FIELD_T;
+  // A foul in a dangerous area is a booking: a conceded penalty, or a foul in
+  // the offender's own half (a cynical stop while defending).
+  const ownHalf = Math.abs(foul.y - ownGoal) < (FIELD_B - FIELD_T) / 2;
+  const bookable = isPenalty || ownHalf;
+  if (!bookable) return;
+
+  if (off.yellow) {
+    off.sentOff = true; // second yellow => red
+    match.cardColor = 'red';
+    off.x = FIELD_L - 16; // trudge off to the touchline, out of play
+    off.y = (FIELD_T + FIELD_B) / 2;
+    off.prevX = off.x;
+    off.prevY = off.y;
+    off.vx = off.vy = 0;
+    off.state = 'idle';
+  } else {
+    off.yellow = true;
+    match.cardColor = 'yellow';
+  }
+  match.cardFlash = CARD_FLASH;
+}
+
 // Execute the queued delivery: throw the ball in / kick it out to play.
 function deliverRestart(state: GameState, match: Match): void {
   const r = match.restart;
@@ -247,7 +356,7 @@ function deliverRestart(state: GameState, match: Match): void {
   let target: Player | null = null;
   let bestScore = Infinity;
   for (const m of state.players) {
-    if (m.team !== t.team || m === t || m.role === 'gk') continue;
+    if (m.team !== t.team || m === t || m.role === 'gk' || m.sentOff) continue;
     const d = Math.hypot(m.x - b.x, m.y - b.y);
     const adv = t.team === 0 ? m.y - b.y : b.y - m.y; // negative = ahead
     const score = d + adv * 0.4;
@@ -269,6 +378,11 @@ function deliverRestart(state: GameState, match: Match): void {
     // Corner: cross toward the penalty spot of that end.
     const spotY = b.y < (FIELD_T + FIELD_B) / 2 ? FIELD_T + PEN_SPOT_D : FIELD_B - PEN_SPOT_D;
     kickToward(state, t, CX, spotY, 250, 105);
+  } else if (r.kind === 'penalty') {
+    // Spot kick: drive it low into a corner of the goal; the keeper dives.
+    const goalLine = attacksTop(t.team, match.half) ? FIELD_T : FIELD_B;
+    const side = t.x <= CX ? 1 : -1; // aim across goal, away from the run-up lean
+    kickToward(state, t, CX + side * (GOAL_W / 2 - 3), goalLine, 360, 24);
   } else {
     // Free kick: play it forward to the best teammate, else upfield toward the
     // opponent goal the taker attacks.
@@ -302,6 +416,7 @@ function beginOut(match: Match, b: Ball, kind: RestartKind, team: 0 | 1, x: numb
 
 export function updateMatch(state: GameState, match: Match, dt: number): void {
   if (match.flash > 0) match.flash = Math.max(0, match.flash - dt);
+  if (match.cardFlash > 0) match.cardFlash = Math.max(0, match.cardFlash - dt);
 
   // Ready freeze before a kickoff: hold, then release control to play.
   if (match.phase === 'kickoff') {
@@ -356,9 +471,16 @@ export function updateMatch(state: GameState, match: Match, dt: number): void {
   if (state.foul) {
     const f = state.foul;
     state.foul = null;
-    const fx = Math.min(FIELD_R - 4, Math.max(FIELD_L + 4, f.x));
-    const fy = Math.min(FIELD_B - 4, Math.max(FIELD_T + 4, f.y));
-    placeRestart(state, match, fx, fy, f.team, 'freekick');
+    // A foul inside the box the fouled team attacks is a penalty; else a free kick.
+    const pen = inPenaltyBox(f.x, f.y, attacksTop(f.team, match.half));
+    if (pen) {
+      placePenalty(state, match, f.team);
+    } else {
+      const fx = Math.min(FIELD_R - 4, Math.max(FIELD_L + 4, f.x));
+      const fy = Math.min(FIELD_B - 4, Math.max(FIELD_T + 4, f.y));
+      placeRestart(state, match, fx, fy, f.team, 'freekick');
+    }
+    judgeCard(match, f, pen);
     return;
   }
 

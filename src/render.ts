@@ -90,7 +90,10 @@ export function makeRenderer(
     ctx.drawImage(baked.canvas, -Math.round(cam.x), -Math.round(cam.y));
 
     // 2. Dynamic shadows (drawn before entities).
-    for (const p of state.players) drawPlayerShadow(ctx, p, cam, alpha);
+    for (const p of state.players) {
+      if (p.sentOff) continue;
+      drawPlayerShadow(ctx, p, cam, alpha);
+    }
     const b = state.ball;
     {
       const bx = lerp(b.prevX, b.x, alpha);
@@ -108,6 +111,7 @@ export function makeRenderer(
     type Item = { y: number; draw: () => void };
     const items: Item[] = [];
     for (const p of state.players) {
+      if (p.sentOff) continue;
       items.push({ y: lerp(p.prevY, p.y, alpha), draw: () => drawPlayer(ctx, p, cam, alpha) });
     }
     items.push({
@@ -190,6 +194,17 @@ export function makeRenderer(
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillRect(clx - 2, ty - 2, cw + 4, 11);
     drawText(ctx, clockText, clx, ty, 'rgb(236,240,226)');
+
+    // 6c. Card flash: a coloured card top-centre after a booking / sending-off.
+    if (match.cardFlash > 0 && match.cardColor) {
+      const cardW = 7;
+      const cardH = 10;
+      const cxp = Math.round((VIEW_W - cardW) / 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(cxp - 2, 3, cardW + 4, cardH + 4);
+      ctx.fillStyle = match.cardColor === 'red' ? 'rgb(206,40,34)' : 'rgb(232,196,40)';
+      ctx.fillRect(cxp, 5, cardW, cardH);
+    }
 
     // 7. Centered overlays (dim the pitch): kickoff/half/full-time and pause.
     const overlay =

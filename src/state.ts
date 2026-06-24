@@ -81,6 +81,9 @@ export interface Player {
   charging: boolean; // shot power building while action held
   charge: number; // seconds the action has been held
   bufferedTap: number; // seconds left on a tap buffered during a lock
+  slideCooldown: number; // AI: seconds until this player may attempt another slide
+  yellow: boolean; // has been booked once
+  sentOff: boolean; // red-carded / second yellow — removed from play
   // Appearance
   kitShirt: RGB;
   kitShorts: RGB;
@@ -115,7 +118,11 @@ export interface GameState {
   // Second local player's controlled team-1 player (null in one-player mode).
   controlled2: Player | null;
   // Raised by a foul (mistimed slide that hits the player, not the ball); the
-  // referee (updateMatch) consumes it to award a free kick to `team`, then
-  // clears it. Location is where the foul happened.
-  foul: { team: 0 | 1; x: number; y: number } | null;
+  // referee (updateMatch) consumes it to award a free kick / penalty to `team`
+  // and judge a card, then clears it. `offender` is the fouling player;
+  // `deniedAttack` is true if the victim was the ball carrier (a cynical foul).
+  foul: { team: 0 | 1; x: number; y: number; offender: Player; deniedAttack: boolean } | null;
+  // Per-team cooldown (seconds) gating how often that team's AI commits a slide
+  // tackle, so slides stay occasional rather than constant.
+  teamSlideCd: [number, number];
 }

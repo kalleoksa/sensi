@@ -27,7 +27,7 @@ const CONTROL_R = 13; // within this, a player is "near" the ball
 const DRIBBLE_LEAD = 6; // ball is kept this far ahead of the carrier's feet
 const DRIBBLE_SPRING = 11; // how hard the ball is held to the lead point
 const TACKLE_R = 8; // an opponent this close to the carrier pokes the ball loose
-const SLIDE_BALL_R = 11; // a slide within this of the ball wins it cleanly
+const SLIDE_BALL_R = 20; // a sliding lunge (legs out) within this of the ball wins it
 const SLIDE_HIT_R = 9; // a slide within this of an opponent makes contact
 
 // Kick tuning.
@@ -89,6 +89,9 @@ export function makePlayer(init: PlayerInit): Player {
     charging: false,
     charge: 0,
     bufferedTap: 0,
+    slideCooldown: 0,
+    yellow: false,
+    sentOff: false,
     kitShirt: init.shirt,
     kitShorts: init.shorts,
     kitSocks: init.socks,
@@ -135,6 +138,12 @@ function startSlide(p: Player): void {
   emitSfx('slide');
 }
 
+// AI: lunge into a slide tackle aimed at a point (the carrier / ball).
+export function startSlideToward(p: Player, tx: number, ty: number): void {
+  p.dir = dirFromVec(tx - p.x, ty - p.y);
+  startSlide(p);
+}
+
 function strike(state: GameState, p: Player, charge: number): void {
   const b = state.ball;
   const [fx, fy] = DIR_VEC[p.dir];
@@ -172,7 +181,7 @@ export function resolvePossession(state: GameState, dt: number): void {
   let bestD = CONTROL_R;
   if (b.controlLock <= 0 && b.z < 4) {
     for (const p of state.players) {
-      if (p.state === 'fallen') continue;
+      if (p.state === 'fallen' || p.sentOff) continue;
       const d = Math.hypot(p.x - b.x, p.y - b.y);
       if (d < bestD) {
         bestD = d;
@@ -221,7 +230,7 @@ export function resolveHeaders(state: GameState): void {
   let best: Player | null = null;
   let bestD = HEAD_R;
   for (const p of state.players) {
-    if (p.role === 'gk') continue; // keepers catch/dive, they don't head
+    if (p.role === 'gk' || p.sentOff) continue; // keepers catch/dive, they don't head
     if (p.state === 'fallen' || p.state === 'slide' || p.state === 'header') continue;
     const d = Math.hypot(p.x - b.x, p.y - b.y);
     if (d < bestD) {
@@ -275,7 +284,7 @@ export function resolveSlideTackles(state: GameState): void {
     if (s.state !== 'slide') continue;
     const wonBall = Math.hypot(s.x - b.x, s.y - b.y) < SLIDE_BALL_R;
     for (const o of state.players) {
-      if (o.team === s.team || o === s || o.state === 'fallen') continue;
+      if (o.team === s.team || o === s || o.state === 'fallen' || o.sentOff) continue;
       if (Math.hypot(o.x - s.x, o.y - s.y) >= SLIDE_HIT_R) continue;
 
       if (wonBall) {
@@ -294,11 +303,12 @@ export function resolveSlideTackles(state: GameState): void {
         o.stateTimer = FALLEN_LOCK;
         o.vx = 0;
         o.vy = 0;
+        const deniedAttack = state.carrier === o;
         if (state.carrier === o) {
           state.carrier = null;
           state.ball.controlLock = 0.2;
         }
-        if (!state.foul) state.foul = { team: o.team, x: o.x, y: o.y };
+        if (!state.foul) state.foul = { team: o.team, x: o.x, y: o.y, offender: s, deniedAttack };
         emitSfx('tackle');
       }
       break; // this slide is resolved by its first contact

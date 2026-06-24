@@ -67,6 +67,7 @@ export function makeSession(config: MatchConfig): Session {
     controlled: null,
     controlled2: null,
     foul: null,
+    teamSlideCd: [0, 0],
   };
   setPitch(config.pitch.friction, config.pitch.bounce);
   const match = makeMatch();

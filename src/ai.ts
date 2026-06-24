@@ -14,7 +14,7 @@
 //   loose   — no carrier: the nearest chases, everyone else tracks the ball.
 
 import { Dir, type GameState, type Player } from './state';
-import { moveToward, kickToward, integrate, PLAYER_SPEED } from './player';
+import { moveToward, kickToward, integrate, startSlideToward, PLAYER_SPEED } from './player';
 import { GROUND_FRICTION } from './ball';
 import { FIELD_T, FIELD_B, FIELD_L, FIELD_R, PLAY_W, CX, GOAL_W } from './world';
 
@@ -46,6 +46,16 @@ const SUPPORT_OPTIMAL_DIST = 70; // px from the carrier a supporter wants to be
 const SUPPORT_MIN_SEP = 44; // keep supporters from piling on one spot
 const SUPPORT_TRAVEL_W = 0.02; // mild bias: a supporter prefers nearer good spots
 
+// AI slide tackles: the presser lunges in when the opponent carrier is in this
+// distance band (closer than this, the proximity poke already wins it; farther,
+// the lunge can't reach). A cooldown stops repeated dives. Whether the lunge
+// reaches the ball (clean) or only the man (foul) is judged by resolveSlideTackles.
+const SLIDE_REACH_MIN = 12;
+const SLIDE_REACH_MAX = 22;
+const SLIDE_COOLDOWN = 8.0; // seconds before this player may slide again
+const SLIDE_MIN_CARRIER_SPEED = 40; // only lunge at a carrier on the move
+const TEAM_SLIDE_CD = 20; // seconds between slide attempts by the same team
+const SLIDE_LEAD = 0.18; // aim ahead of the carrier so the lunge meets the ball
 const MARK_GAP = 12; // a marker sits this far goal-side of its man
 const COVER_GAP = 22; // the cover player sits this far behind the ball toward own goal
 const HOLD_DROP = 6; // extra goal-side bias on the holding block when defending
@@ -170,6 +180,7 @@ function assignTeamDuties(state: GameState, team: 0 | 1): void {
   const ai: Player[] = [];
   for (const p of state.players) {
     if (p.team !== team) continue;
+    if (p.sentOff) continue; // removed from play; no duty
     p.markTarget = null;
     if (p.role === 'gk') {
       p.duty = 'gk';
@@ -380,9 +391,48 @@ export function coastPlayers(state: GameState, dt: number): void {
   }
 }
 
+// Press the ball; if the opponent carrier is in slide range and this player is
+// off cooldown, lunge into a tackle (clean if it reaches the ball, a foul if it
+// only catches the man).
+function pressAi(state: GameState, p: Player, dt: number): void {
+  const b = state.ball;
+  const c = state.carrier;
+  if (c && c.team !== p.team && b.z < 6 && p.slideCooldown <= 0 && state.teamSlideCd[p.team] <= 0) {
+    const dBall = Math.hypot(b.x - p.x, b.y - p.y);
+    const carrierSpeed = Math.hypot(c.vx, c.vy);
+    // Only lunge to intercept a carrier running ONTO us (the ball arrives at the
+    // tackler => clean). Never slide from behind a carrier moving away — that
+    // catches the man, not the ball, and is a foul.
+    const closing = c.vx * (p.x - c.x) + c.vy * (p.y - c.y) > 0;
+    // Slides are a defensive last resort: only in our own half.
+    const ownGoal = ownGoalY(p);
+    const inOwnHalf = ownGoal > MID_Y ? b.y > MID_Y : b.y < MID_Y;
+    if (
+      inOwnHalf &&
+      closing &&
+      dBall > SLIDE_REACH_MIN &&
+      dBall < SLIDE_REACH_MAX &&
+      carrierSpeed > SLIDE_MIN_CARRIER_SPEED
+    ) {
+      // Lunge at where the BALL will be, so the tackle meets the ball (clean)
+      // far more often than the man (foul).
+      startSlideToward(p, b.x + b.vx * SLIDE_LEAD, b.y + b.vy * SLIDE_LEAD);
+      p.slideCooldown = SLIDE_COOLDOWN;
+      state.teamSlideCd[p.team] = TEAM_SLIDE_CD;
+      return;
+    }
+  }
+  // Chase / press right onto the ball (arrive=1) so contact pokes it loose.
+  moveToward(p, b.x, b.y, dt, AI_SPEED, 1);
+}
+
 export function updateTeamAi(state: GameState, dt: number): void {
   computeDuties(state);
+  if (state.teamSlideCd[0] > 0) state.teamSlideCd[0] = Math.max(0, state.teamSlideCd[0] - dt);
+  if (state.teamSlideCd[1] > 0) state.teamSlideCd[1] = Math.max(0, state.teamSlideCd[1] - dt);
   for (const p of state.players) {
+    if (p.slideCooldown > 0) p.slideCooldown = Math.max(0, p.slideCooldown - dt);
+    if (p.sentOff) continue; // removed from play
     if (p === state.controlled || p === state.controlled2) continue; // human-driven
     switch (p.duty) {
       case 'gk':
@@ -392,8 +442,7 @@ export function updateTeamAi(state: GameState, dt: number): void {
         carrierAi(state, p, dt);
         break;
       case 'press':
-        // Chase / press right onto the ball (arrive=1) so contact pokes it loose.
-        moveToward(p, state.ball.x, state.ball.y, dt, AI_SPEED, 1);
+        pressAi(state, p, dt);
         break;
       case 'cover':
         coverAi(state, p, dt);
