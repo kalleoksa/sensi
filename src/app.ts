@@ -49,11 +49,24 @@ type AppScreen =
   | 'teamSelect'
   | 'preMatch'
   | 'options'
+  | 'controls'
   | 'match'
   | 'postMatch'
   | 'compHub'
   | 'compResults'
   | 'compEnd';
+
+// Control bindings, shown on the Options > Controls screen and the pause panel.
+const CONTROL_ROWS: [string, string][] = [
+  ['MOVE', 'WASD / ARROWS'],
+  ['ACTION', 'SPACE / ENTER'],
+  ['PASS', 'TAP ACTION'],
+  ['SHOOT', 'HOLD ACTION'],
+  ['TACKLE', 'TAP  (OFF BALL)'],
+  ['SLIDE', 'HOLD  (OFF BALL)'],
+  ['HEADER', 'AUTOMATIC'],
+  ['PAUSE / QUIT', 'P / ESC'],
+];
 
 const POSTMATCH_ITEMS = ['PLAY AGAIN', 'MAIN MENU'];
 const FULLTIME_HOLD = 3; // seconds the FULL TIME overlay holds before the result screen
@@ -122,7 +135,8 @@ export function makeApp(deps: AppDeps): App {
   let homeFormation: FormationId = DEFAULT_FORMATION;
   let awayFormation: FormationId = DEFAULT_FORMATION;
   const options: MatchOptions = { ...DEFAULT_OPTIONS };
-  let optCursor = 0; // which Options row is active (0 = length, 1 = pitch)
+  let optCursor = 0; // which Options row is active (0 = length, 1 = pitch, 2 = controls)
+  let showControls = false; // controls panel overlaid on a paused match
 
   // Competition state (Cup / League). The team browser is shared with the
   // friendly flow; tsPurpose decides whether picking a team starts a match or a
@@ -252,6 +266,7 @@ export function makeApp(deps: AppDeps): App {
     });
     clearActionEdges(); // don't let the confirming keypress leak in as a kick
     fullTimeTimer = 0;
+    showControls = false;
     screen = 'match';
     emitSfx('uiSelect');
   }
@@ -393,12 +408,12 @@ export function makeApp(deps: AppDeps): App {
       optCursor--;
       emitSfx('uiMove');
     }
-    if (m.down && optCursor < 1) {
+    if (m.down && optCursor < 2) {
       optCursor++;
       emitSfx('uiMove');
     }
     const delta = (m.left ? -1 : 0) + (m.right ? 1 : 0);
-    if (delta !== 0) {
+    if (delta !== 0 && optCursor < 2) {
       if (optCursor === 0) {
         const len = MATCH_LENGTHS.length;
         options.lengthIndex = (options.lengthIndex + delta + len) % len;
@@ -408,9 +423,22 @@ export function makeApp(deps: AppDeps): App {
       }
       emitSfx('uiMove');
     }
+    if (m.confirm && optCursor === 2) {
+      emitSfx('uiSelect');
+      screen = 'controls';
+      return;
+    }
     if (m.back || m.confirm) {
       emitSfx('uiSelect');
       screen = 'mainMenu';
+    }
+  }
+
+  function updateControls(): void {
+    const m = consumeMenuInput();
+    if (m.back || m.confirm) {
+      emitSfx('uiSelect');
+      screen = 'options';
     }
   }
 
@@ -443,7 +471,14 @@ export function makeApp(deps: AppDeps): App {
       emitSfx('uiSelect');
       return;
     }
-    if (c.pause) session.paused = !session.paused;
+    if (c.controls) {
+      showControls = !showControls;
+      session.paused = showControls; // viewing controls pauses the match
+    }
+    if (c.pause) {
+      session.paused = !session.paused;
+      if (!session.paused) showControls = false;
+    }
     if (c.restart) restartSession(session);
     if (c.toggleTwoPlayer && session.config.controlMode !== 'cpu') {
       session.config.controlMode = session.config.controlMode === '2p' ? '1p' : '2p';
@@ -658,13 +693,14 @@ export function makeApp(deps: AppDeps): App {
       { label: 'MATCH LENGTH', value: MATCH_LENGTHS[options.lengthIndex].label },
       { label: 'PITCH', value: PITCHES[options.pitchIndex].name },
     ];
-    let y = 84;
+    let y = 70;
     for (let i = 0; i < rows.length; i++) {
       const active = i === optCursor;
       drawTextCentered(ctx, rows[i].label, 0, VIEW_W, y, active ? DEFAULT_STYLE.hi : DEFAULT_STYLE.on, 2);
       drawTextCentered(ctx, `< ${rows[i].value} >`, 0, VIEW_W, y + 22, active ? DEFAULT_STYLE.hi : SUBTLE, 2);
-      y += 64;
+      y += 58;
     }
+    drawTextCentered(ctx, 'CONTROLS', 0, VIEW_W, y, optCursor === 2 ? DEFAULT_STYLE.hi : DEFAULT_STYLE.on, 2);
     drawTextCentered(ctx, 'ARROWS CHANGE   ESC BACK', 0, VIEW_W, VIEW_H - 14, SUBTLE, 1);
   }
 
@@ -855,6 +891,32 @@ export function makeApp(deps: AppDeps): App {
     const distToGoal = Math.min(Math.abs(b.y - FIELD_T), Math.abs(b.y - FIELD_B));
     const near = Math.max(0, 1 - distToGoal / 180);
     setCrowdIntensity(Math.max(near, session.match.flash > 0 ? 1 : 0));
+    // Controls panel over the (paused) match, or a hint to open it when paused.
+    if (showControls) {
+      ctx.fillStyle = 'rgba(0,0,0,0.8)';
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      drawTextCentered(ctx, 'CONTROLS', 0, VIEW_W, 26, TITLE, 2);
+      drawControlsList(70);
+      drawTextCentered(ctx, 'C / P  RESUME', 0, VIEW_W, VIEW_H - 16, SUBTLE, 1);
+    } else if (session.paused) {
+      drawTextCentered(ctx, 'C  CONTROLS', 0, VIEW_W, VIEW_H - 16, SUBTLE, 1);
+    }
+  }
+
+  function drawControlsList(topY: number): void {
+    let y = topY;
+    for (const [label, key] of CONTROL_ROWS) {
+      drawText(ctx, label, 70, y, DEFAULT_STYLE.on, 1);
+      drawText(ctx, key, 200, y, DEFAULT_STYLE.hi, 1);
+      y += 18;
+    }
+  }
+
+  function drawControls(): void {
+    drawBackdrop();
+    drawHeader('CONTROLS');
+    drawControlsList(70);
+    drawTextCentered(ctx, 'ESC BACK', 0, VIEW_W, VIEW_H - 14, SUBTLE, 1);
   }
 
   // --- dispatch -------------------------------------------------------------
@@ -880,6 +942,9 @@ export function makeApp(deps: AppDeps): App {
           break;
         case 'options':
           updateOptions();
+          break;
+        case 'controls':
+          updateControls();
           break;
         case 'match':
           updateMatch(dt);
@@ -922,6 +987,9 @@ export function makeApp(deps: AppDeps): App {
           break;
         case 'options':
           drawOptions();
+          break;
+        case 'controls':
+          drawControls();
           break;
         case 'postMatch':
           drawPostMatch();

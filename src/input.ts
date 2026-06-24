@@ -202,6 +202,7 @@ export interface MatchControls {
   exit: boolean; // Esc -> back to menu
   restart: boolean; // R
   toggleTwoPlayer: boolean; // 2 (dev convenience)
+  controls: boolean; // C -> show the controls panel (pauses)
 }
 
 // Read match-control key edges, then drain UI edges. Call once per frame while
@@ -212,6 +213,7 @@ export function consumeMatchControls(): MatchControls {
     exit: uiEdges.has('Escape'),
     restart: uiEdges.has('KeyR'),
     toggleTwoPlayer: uiEdges.has('Digit2'),
+    controls: uiEdges.has('KeyC'),
   };
   uiEdges.clear();
   return c;
