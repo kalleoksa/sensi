@@ -460,6 +460,24 @@ export function deliverRestartAimed(state: GameState, match: Match): void {
       nx /= ren;
       ny /= ren;
     }
+  } else {
+    // Free kick taken near a touchline: the aim point is clamped inside the
+    // pitch, but kickToward still launches at full power along the aim — so an
+    // outward aim flies PAST the clamp and straight out for a throw to the other
+    // team. Kill any outward component near the line so it stays in (parallel or
+    // infield). Midfield free kicks keep full directional freedom.
+    const NEAR_LINE = 40;
+    const inward = t.x > FIELD_R - NEAR_LINE ? -1 : t.x < FIELD_L + NEAR_LINE ? 1 : 0;
+    if (inward !== 0 && nx * inward < 0) {
+      nx = 0; // run it up/down the line instead of booting it out
+      const ren = Math.hypot(nx, ny);
+      if (ren < 0.1) {
+        ny = t.attacksTop ? -1 : 1; // pure-outward aim: play it up the pitch
+      } else {
+        nx /= ren;
+        ny /= ren;
+      }
+    }
   }
   const tx = clampf(t.x + nx * RESTART_DIST, FIELD_L + 4, FIELD_R - 4);
   const ty = clampf(t.y + ny * RESTART_DIST, FIELD_T + 4, FIELD_B - 4);
