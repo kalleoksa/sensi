@@ -51,6 +51,7 @@ const SUPPORT_DIST_W = 2;
 const SUPPORT_ADVANCE_W = 1; // prefer spots ahead of the ball
 const SUPPORT_OPTIMAL_DIST = 70; // px from the carrier a supporter wants to be
 const SUPPORT_BEHIND = 34; // grid reaches this far behind the carrier (a drop outlet)
+const OFFSIDE_MARGIN = 8; // keep attacking runs this far onside of the last defender
 const SUPPORT_MIN_SEP = 44; // keep supporters from piling on one spot
 const SUPPORT_TRAVEL_W = 0.02; // mild bias: a supporter prefers nearer good spots
 
@@ -347,6 +348,32 @@ function scoreSpot(state: GameState, carrier: Player, x: number, y: number, goal
   return score;
 }
 
+// The offside line for `team`: the world y of the SECOND-most-advanced opponent
+// (the last outfield defender, since the keeper is usually deepest). Attacking
+// runs shouldn't push beyond this toward the goal they attack — we don't enforce
+// offside, but players should at least try to stay onside.
+function offsideLineY(state: GameState, team: 0 | 1, attacksTop: boolean): number {
+  const adv = (y: number) => (attacksTop ? -y : y); // larger = more advanced toward the goal
+  let first = -Infinity;
+  let second = -Infinity;
+  let firstY = 0;
+  let secondY = 0;
+  for (const p of state.players) {
+    if (p.team === team || p.sentOff) continue;
+    const a = adv(p.y);
+    if (a > first) {
+      second = first;
+      secondY = firstY;
+      first = a;
+      firstY = p.y;
+    } else if (a > second) {
+      second = a;
+      secondY = p.y;
+    }
+  }
+  return second === -Infinity ? firstY : secondY;
+}
+
 // Lay a grid of spots over the attacking half, score them, and assign each
 // supporter the best free spot near it (claimed spots block their neighbours so
 // supporters spread out rather than pile onto the single best spot).
@@ -357,11 +384,20 @@ function assignSupportTargets(state: GameState, carrier: Player): void {
 
   const goalY = carrier.attacksTop ? FIELD_T : FIELD_B;
   const fs = carrier.attacksTop ? -1 : 1; // forward sign (toward the attacking goal)
-  const yFar = carrier.attacksTop ? FIELD_T + 24 : FIELD_B - 24; // just off the goal line
+  // Far edge: the offside line (last defender), pulled a touch onside — so runs
+  // stay level with the defence instead of parking beyond it near the byline.
+  // Never push past the byline itself. The carrier may already be ahead of the
+  // line, so also allow the edge to reach a bit beyond the carrier.
+  const offside = offsideLineY(state, carrier.team, carrier.attacksTop) - fs * OFFSIDE_MARGIN;
+  const byline = carrier.attacksTop ? FIELD_T + 24 : FIELD_B - 24;
+  const aheadOfCarrier = carrier.y + fs * 20;
+  const yFar = carrier.attacksTop
+    ? Math.max(byline, Math.min(offside, aheadOfCarrier))
+    : Math.min(byline, Math.max(offside, aheadOfCarrier));
   // Near edge sits a little BEHIND the carrier so a supporter can drop in to
-  // offer a short outlet; the far edge is the byline for runs in behind. This
-  // tracks the ball up the pitch instead of being pinned to the halfway line, so
-  // building from deep still produces nearby options rather than only long bombs.
+  // offer a short outlet. This tracks the ball up the pitch instead of being
+  // pinned to the halfway line, so building from deep still produces nearby
+  // options rather than only long bombs.
   const yNear = clamp(carrier.y - fs * SUPPORT_BEHIND, FIELD_T + 24, FIELD_B - 24);
   const spots: Spot[] = [];
   for (let c = 0; c < SUPPORT_COLS; c++) {
