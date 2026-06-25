@@ -161,10 +161,11 @@ export function makeRenderer(
       ctx.fillRect(ix, iy + 2, 1, 1);
     }
 
-    // 3.5 Throw-in aim arrow: while a human lines up a throw, draw a short dotted
-    // arrow from the thrower in the chosen direction so they can point the throw.
-    if (match.awaitThrow) {
-      const a = match.awaitThrow;
+    // 3.5 Restart aim arrow: while a human lines up a throw-in or free kick, draw
+    // a short dotted arrow from the taker in the chosen direction so they can
+    // point the delivery.
+    if (match.awaitRestart) {
+      const a = match.awaitRestart;
       const t = a.taker;
       let nx = a.dx;
       let ny = a.dy;

@@ -7,7 +7,7 @@ import { VIEW_W, VIEW_H, makeCamera, updateCamera, FIELD_T, FIELD_B, CX } from '
 import { consumeInputs } from './input';
 import { makeBall, stepBall, setPitch } from './ball';
 import { controlHuman, resolvePossession, resolveSlideTackles, resolveHeaders } from './player';
-import { makeMatch, updateMatch, startMatch, aimThrow, deliverThrow, type Match } from './match';
+import { makeMatch, updateMatch, startMatch, aimRestart, deliverRestartAimed, type Match } from './match';
 import { makeTeams } from './team';
 import { updateTeamAi, coastPlayers } from './ai';
 import { makeReferee, stepReferee } from './referee';
@@ -96,14 +96,14 @@ export function stepSession(s: Session, dt: number): void {
   const twoPlayer = config.controlMode === '2p';
   const input = consumeInputs(twoPlayer);
 
-  // Manual throw-in: a human is on the line lining up the throw. Aim with the
+  // Manual restart: a human is lining up a throw-in or free kick. Aim with the
   // stick, press action to release. Other bodies coast; the clock stays paused
   // (handled in updateMatch) until the ball is back in play.
-  if (match.awaitThrow) {
-    const frame = match.awaitThrow.team === 0 ? input.p1 : input.p2;
+  if (match.awaitRestart) {
+    const frame = match.awaitRestart.team === 0 ? input.p1 : input.p2;
     if (frame) {
-      aimThrow(match, frame.dx, frame.dy);
-      if (frame.pressed) deliverThrow(state, match);
+      aimRestart(match, frame.dx, frame.dy);
+      if (frame.pressed) deliverRestartAimed(state, match);
     }
     coastPlayers(state, dt);
     stepBall(state.ball, dt);
