@@ -28,8 +28,8 @@ const CONTROL_R = 13; // within this, a player is "near" the ball
 const DRIBBLE_LEAD = 6; // ball is kept this far ahead of the carrier's feet
 const DRIBBLE_SPRING = 11; // how hard the ball is held to the lead point
 const TACKLE_R = 8; // an opponent this close to the carrier pokes the ball loose
-const SLIDE_BALL_R = 20; // a sliding lunge (legs out) within this of the ball wins it
-const SLIDE_HIT_R = 9; // a slide within this of an opponent makes contact
+const SLIDE_BALL_R = 26; // a sliding lunge (legs out) within this of the ball wins it
+const SLIDE_HIT_R = 8; // a slide within this of an opponent makes contact
 
 // Standing tackle (a quick on-feet poke) vs the committed slide: tap the action
 // button to poke, hold it past SLIDE_HOLD to commit to a slide.
@@ -254,21 +254,20 @@ function strike(state: GameState, p: Player, charge: number): void {
 // dribbler's foot, and let a closing opponent poke it loose (a tackle).
 export function resolvePossession(state: GameState, dt: number): void {
   const b = state.ball;
-  // Don't let anyone claim a ball that's running out over a touchline. A player
-  // on the line can magnet-grab the ball from a full control-radius inside it,
-  // so a defender standing where the ball exits would otherwise hoover up a ball
-  // that should go out — flipping the throw-in award (or keeping play alive). If
-  // the ball is already out, or within a control-radius of a touchline and
-  // moving outward with intent, leave it: it runs out owned by whoever last
-  // deliberately played it. Scoped to the touchlines (x) so a keeper can still
-  // claim a ball near its own goal line. OUT_INTENT filters a gentle drift (a
-  // winger hugging the line keeps control) from a ball genuinely knocked out.
-  const OUT_INTENT = 20; // px/s outward speed that counts as "going out"
+  // Don't let anyone magnet-grab a ball that's genuinely running out over a
+  // touchline (resolvePossession runs before the ball moves, so a player on the
+  // line could otherwise hoover up a ball that should go out — flipping the
+  // throw-in award). Freeze only if the ball is already out, or will actually
+  // cross a touchline within OUT_HORIZON: a tight predictive window, so a player
+  // can still receive a ball rolling near the line that ISN'T about to leave
+  // (e.g. collecting a free kick played down the wing). Scoped to the touchlines
+  // (x) so a keeper can still claim a ball near its own goal line.
+  const OUT_HORIZON = 0.12; // s until the ball crosses the line for the freeze to kick in
+  let tCross = Infinity;
+  if (b.vx > 1) tCross = (FIELD_R - b.x) / b.vx;
+  else if (b.vx < -1) tCross = (FIELD_L - b.x) / b.vx;
   const crossingTouch =
-    b.x < FIELD_L ||
-    b.x > FIELD_R ||
-    (b.x > FIELD_R - CONTROL_R && b.vx > OUT_INTENT) ||
-    (b.x < FIELD_L + CONTROL_R && b.vx < -OUT_INTENT);
+    b.x < FIELD_L || b.x > FIELD_R || (tCross >= 0 && tCross < OUT_HORIZON);
   let best: Player | null = null;
   let bestD = CONTROL_R;
   if (!crossingTouch && b.controlLock <= 0 && b.z < 4) {
