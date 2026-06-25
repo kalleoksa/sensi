@@ -66,9 +66,18 @@ const TEAM_SLIDE_CD = 20; // seconds between slide attempts by the same team
 const SLIDE_LEAD = 0.18; // aim ahead of the carrier so the lunge meets the ball
 const MARK_GAP = 12; // a marker sits this far goal-side of its man
 const COVER_GAP = 22; // the cover player sits this far behind the ball toward own goal
-const HOLD_DROP = 6; // extra goal-side bias on the holding block when defending
 const VERT_TRACK = 0.5; // uniform vertical tracking: how far each line moves home->ball depth
 const MID_Y = (FIELD_T + FIELD_B) / 2;
+
+// Defensive line. The defending block holds a line goal-side of the ball that is
+// never collapsed onto the goal line and never higher than a cap — so the team
+// stays compact without packing its own six-yard box, leaving beatable space in
+// behind (for runs / through-balls) and between the lines. Depth is measured
+// from a team's own goal line, into the pitch.
+const LINE_GAP = 22; // the back line sits this far goal-side of the ball
+const LINE_MIN = 34; // never drop closer than this to our goal (the keeper covers behind)
+const LINE_MAX = 140; // step up no further than this when the ball is far away
+const LINE_TIER = 40; // mids/fwds hold a line this far ahead of the back line
 
 // Goalkeeper dive tuning. The keeper aims to arrive at the ball's crossing
 // point exactly as the ball gets there (not a constant-speed lunge that
@@ -97,6 +106,31 @@ function ownGoalY(p: Player): number {
 // How far toY is ahead of fromY in p's attacking direction (positive = ahead).
 function advanceOf(p: Player, fromY: number, toY: number): number {
   return p.attacksTop ? fromY - toY : toY - fromY;
+}
+
+// Sign that converts a world y into "depth into our half" for p: +1 if our goal
+// is at the top (depth grows with y), -1 if it's at the bottom.
+function intoField(p: Player): number {
+  return ownGoalY(p) === FIELD_T ? 1 : -1;
+}
+
+// The depth (from our own goal) a defending player should hold: goal-side of the
+// ball by LINE_GAP, clamped between a floor (never on the goal line) and a cap
+// (a high line when the ball is far). Mids/fwds hold a tier ahead of the backs,
+// so the block is two spaced lines rather than one clump.
+function defendDepthFloor(p: Player, ballY: number): number {
+  const ballDepth = (ballY - ownGoalY(p)) * intoField(p);
+  const line = clamp(ballDepth - LINE_GAP, LINE_MIN, LINE_MAX);
+  return p.role === 'def' ? line : line + LINE_TIER;
+}
+
+// Raise a target y so the player is no DEEPER than `floorDepth` from our goal
+// (they may stand further forward; they just won't sink behind the line).
+function clampToLine(ty: number, p: Player, floorDepth: number): number {
+  const goalLine = ownGoalY(p);
+  const into = intoField(p);
+  const depth = (ty - goalLine) * into;
+  return depth < floorDepth ? goalLine + into * floorDepth : ty;
 }
 
 function nearestOpponent(state: GameState, p: Player): { opp: Player | null; d: number } {
@@ -613,7 +647,11 @@ function markAi(state: GameState, p: Player, dt: number): void {
   const gy = ownGoalY(p);
   const sign = gy < o.y ? -1 : 1; // toward our own goal in y
   const tx = clamp(o.x * 0.8 + CX * 0.2, FIELD_L + 4, FIELD_R - 4);
-  const ty = clamp(o.y + sign * MARK_GAP, FIELD_T + 6, FIELD_B - 6);
+  let ty = clamp(o.y + sign * MARK_GAP, FIELD_T + 6, FIELD_B - 6);
+  // Hold the defensive line: track the man, but don't follow a runner deeper than
+  // the line — leave the ball in behind to the keeper instead of being dragged
+  // onto our own goal line, so the box isn't packed and there's space to attack.
+  ty = clampToLine(ty, p, defendDepthFloor(p, state.ball.y));
   moveToward(p, tx, ty, dt, AI_SPEED);
 }
 
@@ -641,8 +679,9 @@ function holdAi(state: GameState, p: Player, dt: number): void {
   const tx = clamp(p.homeX + (b.x - p.homeX) * w * 0.8, FIELD_L + 4, FIELD_R - 4);
   const defending = state.carrier != null && state.carrier.team !== p.team;
   if (defending) {
-    const gy = ownGoalY(p);
-    ty += (gy < ty ? -1 : 1) * HOLD_DROP;
+    // Hold the defensive line rather than collapsing onto our goal: keep the
+    // block compact but high enough to leave space in behind and between lines.
+    ty = clampToLine(ty, p, defendDepthFloor(p, b.y));
   }
   ty = clamp(ty, FIELD_T + 6, FIELD_B - 6);
   moveToward(p, tx, ty, dt, AI_SPEED * 0.92);
