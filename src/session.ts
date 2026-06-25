@@ -100,12 +100,15 @@ export function stepSession(s: Session, dt: number): void {
   // stick, press action to release. Meanwhile the other players move into shape
   // (attackers spread forward, defenders mark) rather than coasting in a clump.
   if (match.awaitRestart) {
+    const taker = match.awaitRestart.taker; // capture before release may clear it
     const frame = match.awaitRestart.team === 0 ? input.p1 : input.p2;
     if (frame) {
       aimRestart(match, frame.dx, frame.dy);
-      if (frame.pressed) deliverRestartAimed(state, match);
+      if (frame.pressed) deliverRestartAimed(state, match); // may set awaitRestart = null
     }
-    positionForRestart(state, match.awaitRestart.taker, dt);
+    // Shape the other players while we wait — but only if the throw/kick hasn't
+    // just been released this frame (deliverRestartAimed clears awaitRestart).
+    if (match.awaitRestart) positionForRestart(state, taker, dt);
     stepBall(state.ball, dt);
     updateMatch(state, match, dt);
     stepReferee(state.referee, state.ball, dt);
