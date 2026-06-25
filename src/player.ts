@@ -254,9 +254,24 @@ function strike(state: GameState, p: Player, charge: number): void {
 // dribbler's foot, and let a closing opponent poke it loose (a tackle).
 export function resolvePossession(state: GameState, dt: number): void {
   const b = state.ball;
+  // Don't let anyone claim a ball that's running out over a touchline. A player
+  // on the line can magnet-grab the ball from a full control-radius inside it,
+  // so a defender standing where the ball exits would otherwise hoover up a ball
+  // that should go out — flipping the throw-in award (or keeping play alive). If
+  // the ball is already out, or within a control-radius of a touchline and
+  // moving outward with intent, leave it: it runs out owned by whoever last
+  // deliberately played it. Scoped to the touchlines (x) so a keeper can still
+  // claim a ball near its own goal line. OUT_INTENT filters a gentle drift (a
+  // winger hugging the line keeps control) from a ball genuinely knocked out.
+  const OUT_INTENT = 20; // px/s outward speed that counts as "going out"
+  const crossingTouch =
+    b.x < FIELD_L ||
+    b.x > FIELD_R ||
+    (b.x > FIELD_R - CONTROL_R && b.vx > OUT_INTENT) ||
+    (b.x < FIELD_L + CONTROL_R && b.vx < -OUT_INTENT);
   let best: Player | null = null;
   let bestD = CONTROL_R;
-  if (b.controlLock <= 0 && b.z < 4) {
+  if (!crossingTouch && b.controlLock <= 0 && b.z < 4) {
     for (const p of state.players) {
       if (p.state === 'fallen' || p.sentOff) continue;
       const d = Math.hypot(p.x - b.x, p.y - b.y);
