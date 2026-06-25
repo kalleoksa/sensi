@@ -158,6 +158,25 @@ export function makeRenderer(
       ctx.fillRect(ix, iy + 2, 1, 1);
     }
 
+    // 3.5 Throw-in aim arrow: while a human lines up a throw, draw a short dotted
+    // arrow from the thrower in the chosen direction so they can point the throw.
+    if (match.awaitThrow) {
+      const a = match.awaitThrow;
+      const t = a.taker;
+      let nx = a.dx;
+      let ny = a.dy;
+      const len = Math.hypot(nx, ny) || 1;
+      nx /= len;
+      ny /= len;
+      const ox = lerp(t.prevX, t.x, alpha) - cam.x;
+      const oy = lerp(t.prevY, t.y, alpha) - cam.y - 6;
+      ctx.fillStyle = a.team === 0 ? 'rgb(250,250,240)' : 'rgb(245,215,80)';
+      for (let i = 3; i <= 15; i += 2) {
+        ctx.fillRect(Math.round(ox + nx * i), Math.round(oy + ny * i), 1, 1);
+      }
+      ctx.fillRect(Math.round(ox + nx * 17) - 1, Math.round(oy + ny * 17) - 1, 3, 3); // arrowhead
+    }
+
     // 4. Goal frames on top (net occludes the ball when it's inside).
     ctx.drawImage(baked.goalTop.canvas, Math.round(baked.goalTop.ox - cam.x), Math.round(baked.goalTop.oy - cam.y));
     ctx.drawImage(

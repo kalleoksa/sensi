@@ -7,7 +7,7 @@ import { VIEW_W, VIEW_H, makeCamera, updateCamera, FIELD_T, FIELD_B, CX } from '
 import { consumeInputs } from './input';
 import { makeBall, stepBall, setPitch } from './ball';
 import { controlHuman, resolvePossession, resolveSlideTackles, resolveHeaders } from './player';
-import { makeMatch, updateMatch, startMatch, type Match } from './match';
+import { makeMatch, updateMatch, startMatch, aimThrow, deliverThrow, type Match } from './match';
 import { makeTeams } from './team';
 import { updateTeamAi, coastPlayers } from './ai';
 import { makeRng } from './rng';
@@ -72,6 +72,12 @@ export function makeSession(config: MatchConfig): Session {
   setPitch(config.pitch.friction, config.pitch.bounce);
   const match = makeMatch();
   match.halfLength = config.halfLength; // startMatch -> setupHalf resets the clock to this
+  // Which teams a human drives: 1p => team 0 only, 2p => both, cpu => neither.
+  // Throw-ins for a human team are aimed and released by the player.
+  match.humanTeams =
+    config.controlMode === 'cpu' ? [false, false]
+    : config.controlMode === '2p' ? [true, true]
+    : [true, false];
   startMatch(state, match);
   // Center the camera on the ball at kickoff.
   updateCamera(state.camera, state.ball.x, state.ball.y, 0, 0, 1);
@@ -87,6 +93,22 @@ export function stepSession(s: Session, dt: number): void {
   const { state, match, config } = s;
   const twoPlayer = config.controlMode === '2p';
   const input = consumeInputs(twoPlayer);
+
+  // Manual throw-in: a human is on the line lining up the throw. Aim with the
+  // stick, press action to release. Other bodies coast; the clock stays paused
+  // (handled in updateMatch) until the ball is back in play.
+  if (match.awaitThrow) {
+    const frame = match.awaitThrow.team === 0 ? input.p1 : input.p2;
+    if (frame) {
+      aimThrow(match, frame.dx, frame.dy);
+      if (frame.pressed) deliverThrow(state, match);
+    }
+    coastPlayers(state, dt);
+    stepBall(state.ball, dt);
+    updateMatch(state, match, dt);
+    updateCamera(state.camera, state.ball.x, state.ball.y, state.ball.vx, state.ball.vy, dt);
+    return;
+  }
 
   // Freeze player control during the post-goal pause, but keep the ball rolling
   // so it travels into the net during the goal celebration.

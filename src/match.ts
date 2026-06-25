@@ -5,7 +5,7 @@
 //
 // Team 0 attacks the TOP goal (decreasing y); team 1 attacks the BOTTOM.
 
-import type { Ball, GameState, Player } from './state';
+import { dirFromVec, type Ball, type GameState, type Player } from './state';
 import { kickToward } from './player';
 import { emitSfx } from './audio';
 import { homeForSlot } from './team';
@@ -58,10 +58,30 @@ export interface Match {
   // Brief HUD card flash after a booking / sending-off.
   cardFlash: number;
   cardColor: 'yellow' | 'red' | null;
+  // Which teams a human controls (set by the session from the control mode). A
+  // human team's throw-in is aimed and released by the player rather than auto-
+  // delivered.
+  humanTeams: [boolean, boolean];
+  // While set, a human is lining up a throw-in: the taker holds the ball on the
+  // line and the player aims (dx,dy) then presses action to release. `t` counts
+  // idle time toward an auto-throw fallback so the game can't soft-lock.
+  awaitThrow: { taker: Player; team: 0 | 1; dx: number; dy: number; t: number } | null;
 }
 
 const RESTART_DEAD = 0.8; // brief pause to set up a throw-in / goal kick / corner
 const OUT_DELAY = 0.5; // let the ball roll out past the line before the whistle
+
+// Manual throw-in (human team): the player aims with the stick and presses
+// action to throw. THROW_AIM_TIMEOUT auto-releases if they never do, so an idle
+// game can't stall. The throw is a soft lob a short way infield.
+const THROW_AIM_TIMEOUT = 8; // seconds of no input before the throw auto-releases
+const THROW_POWER = 175;
+const THROW_LOB = 90;
+const THROW_DIST = 60; // how far ahead of the thrower the aim point sits
+
+function clampf(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
+}
 
 export function makeMatch(): Match {
   return {
@@ -80,6 +100,8 @@ export function makeMatch(): Match {
     outTimer: 0,
     cardFlash: 0,
     cardColor: null,
+    humanTeams: [false, false],
+    awaitThrow: null,
   };
 }
 
@@ -392,6 +414,53 @@ function judgeCard(
   match.cardFlash = CARD_FLASH;
 }
 
+// Point a pending manual throw-in. Called from the session each frame with the
+// thrower's held direction; a non-zero stick sets the aim and resets the idle
+// timer so the auto-throw fallback only fires after sustained inactivity.
+export function aimThrow(match: Match, dx: number, dy: number): void {
+  const a = match.awaitThrow;
+  if (!a) return;
+  if (dx !== 0 || dy !== 0) {
+    a.dx = dx;
+    a.dy = dy;
+    a.t = 0;
+  }
+}
+
+// Release a pending manual throw-in along its current aim. The aim is forced to
+// have an infield component so the player can never throw the ball straight back
+// out over the touchline.
+export function deliverThrow(state: GameState, match: Match): void {
+  const a = match.awaitThrow;
+  if (!a) return;
+  const t = a.taker;
+  let nx = a.dx;
+  let ny = a.dy;
+  let len = Math.hypot(nx, ny);
+  if (len < 0.1) {
+    nx = t.x < CX ? 1 : -1; // no aim held: straight infield
+    ny = 0;
+    len = 1;
+  }
+  nx /= len;
+  ny /= len;
+  const infield = t.x < CX ? 1 : -1; // +x from the left line, -x from the right
+  if (nx * infield < 0.2) {
+    nx = infield * 0.5; // clamp an outward aim back into the field
+    const ren = Math.hypot(nx, ny) || 1;
+    nx /= ren;
+    ny /= ren;
+  }
+  const tx = clampf(t.x + nx * THROW_DIST, FIELD_L + 4, FIELD_R - 4);
+  const ty = clampf(t.y + ny * THROW_DIST, FIELD_T + 4, FIELD_B - 4);
+  t.dir = dirFromVec(nx, ny);
+  state.ball.controlLock = 0;
+  kickToward(state, t, tx, ty, THROW_POWER, THROW_LOB);
+  match.awaitThrow = null;
+  match.restart = null;
+  match.phase = 'play';
+}
+
 // Execute the queued delivery: throw the ball in / kick it out to play.
 function deliverRestart(state: GameState, match: Match): void {
   const r = match.restart;
@@ -486,14 +555,28 @@ export function updateMatch(state: GameState, match: Match, dt: number): void {
   if (match.phase === 'fulltime') return; // match over; R restarts (see main.ts)
 
   if (match.phase === 'dead') {
+    // A human is lining up a throw-in: hold here until they release it (or the
+    // idle fallback fires). Aim + release are driven from the session.
+    if (match.awaitThrow) {
+      match.awaitThrow.t += dt;
+      if (match.awaitThrow.t >= THROW_AIM_TIMEOUT) deliverThrow(state, match);
+      return;
+    }
     match.deadTimer -= dt;
     if (match.deadTimer <= 0) {
       if (match.deadReset) {
         // After a goal: conceding team kicks off (its own ready freeze).
         beginKickoff(state, match, match.kickoffTeam);
       } else {
-        deliverRestart(state, match); // throw it in / kick it out to play
-        match.phase = 'play';
+        const r = match.restart;
+        // A human team's throw-in is handed to the player to aim and release;
+        // everything else (and AI throws) is auto-delivered.
+        if (r && r.kind === 'throw' && match.humanTeams[r.taker.team]) {
+          match.awaitThrow = { taker: r.taker, team: r.taker.team, dx: r.taker.x < CX ? 1 : -1, dy: 0, t: 0 };
+        } else {
+          deliverRestart(state, match); // throw it in / kick it out to play
+          match.phase = 'play';
+        }
       }
     }
     return;

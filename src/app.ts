@@ -66,6 +66,7 @@ const CONTROL_ROWS: [string, string][] = [
   ['TACKLE', 'TAP  (OFF BALL)'],
   ['SLIDE', 'HOLD  (OFF BALL)'],
   ['HEADER', 'AUTOMATIC'],
+  ['THROW-IN', 'AIM + ACTION'],
   ['PAUSE / QUIT', 'P / ESC'],
 ];
 
