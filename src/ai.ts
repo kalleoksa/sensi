@@ -388,12 +388,19 @@ function assignSupportTargets(state: GameState, carrier: Player): void {
   // stay level with the defence instead of parking beyond it near the byline.
   // Never push past the byline itself. The carrier may already be ahead of the
   // line, so also allow the edge to reach a bit beyond the carrier.
-  const offside = offsideLineY(state, carrier.team, carrier.attacksTop) - fs * OFFSIDE_MARGIN;
   const byline = carrier.attacksTop ? FIELD_T + 24 : FIELD_B - 24;
-  const aheadOfCarrier = carrier.y + fs * 20;
-  const yFar = carrier.attacksTop
-    ? Math.max(byline, Math.min(offside, aheadOfCarrier))
-    : Math.min(byline, Math.max(offside, aheadOfCarrier));
+  // No offside on a throw-in: attackers may position right up to the byline.
+  // Otherwise hold the offside line (last defender), pulled a touch onside.
+  let yFar: number;
+  if (state.suppressOffside) {
+    yFar = byline;
+  } else {
+    const offside = offsideLineY(state, carrier.team, carrier.attacksTop) - fs * OFFSIDE_MARGIN;
+    const aheadOfCarrier = carrier.y + fs * 20;
+    yFar = carrier.attacksTop
+      ? Math.max(byline, Math.min(offside, aheadOfCarrier))
+      : Math.min(byline, Math.max(offside, aheadOfCarrier));
+  }
   // Near edge sits a little BEHIND the carrier so a supporter can drop in to
   // offer a short outlet. This tracks the ball up the pitch instead of being
   // pinned to the halfway line, so building from deep still produces nearby
@@ -487,9 +494,11 @@ export function coastPlayers(state: GameState, dt: number): void {
 // into attacking positions (support runs up the pitch) and drops the other team
 // into its defending shape. The taker holds the ball; no one tackles (the ball
 // is dead — press/cover just sit off it). Ball-untouched: only players move.
-export function positionForRestart(state: GameState, taker: Player, dt: number): void {
+export function positionForRestart(state: GameState, taker: Player, dt: number, noOffside = false): void {
   const prev = state.carrier;
+  const prevSuppress = state.suppressOffside;
   state.carrier = taker; // so duties read as "taker's team in possession"
+  state.suppressOffside = noOffside; // throw-ins have no offside
   computeDuties(state);
   for (const p of state.players) {
     if (p === taker || p.sentOff) continue;
@@ -513,6 +522,7 @@ export function positionForRestart(state: GameState, taker: Player, dt: number):
     }
   }
   state.carrier = prev;
+  state.suppressOffside = prevSuppress;
 }
 
 // Press the ball; if the opponent carrier is in slide range and this player is

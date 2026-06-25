@@ -63,11 +63,21 @@ export interface Match {
   // human team's throw-in / free kick is aimed and released by the player rather
   // than auto-delivered.
   humanTeams: [boolean, boolean];
-  // While set, a human is lining up a restart (throw-in or free kick): the taker
-  // stands on the ball and the player aims (dx,dy) then presses action to
-  // release. `t` counts idle time toward an auto-release fallback so the game
-  // can't soft-lock.
-  awaitRestart: { taker: Player; team: 0 | 1; kind: 'throw' | 'freekick'; dx: number; dy: number; t: number } | null;
+  // While set, a human is lining up a restart (throw-in, free kick or corner):
+  // the taker stands on the ball and the player aims (dx,dy), holds action to
+  // build power (`charge`, gated by `charging` so a held-over press doesn't fire
+  // instantly), then releases to deliver. `t` counts idle time toward an auto-
+  // release fallback so the game can't soft-lock.
+  awaitRestart: {
+    taker: Player;
+    team: 0 | 1;
+    kind: 'throw' | 'freekick' | 'corner';
+    dx: number;
+    dy: number;
+    t: number;
+    charge: number;
+    charging: boolean;
+  } | null;
 }
 
 const RESTART_DEAD = 0.8; // brief pause to set up a throw-in / goal kick / corner
@@ -78,11 +88,19 @@ const OUT_DELAY = 0.5; // let the ball roll out past the line before the whistle
 // stall. A throw is a soft lob a short way infield; a free kick is a driven ball
 // (a pass to a teammate or a strike at goal).
 const AIM_TIMEOUT = 8; // seconds of no input before the restart auto-releases
-const THROW_POWER = 175;
-const THROW_LOB = 90;
-const FK_POWER = 250; // driven free kick — strong enough to shoot or ping a pass
-const FK_LOB = 60;
 const RESTART_DIST = 60; // how far ahead of the taker the aim point sits
+// Power is charged by holding action: tap = min, full hold = max. Per kind, with
+// a loft for the lofted ones (throw lob, free-kick drive, corner cross).
+const MAX_RESTART_CHARGE = 0.7; // seconds of hold for full power
+const THROW_MIN = 120;
+const THROW_MAX = 215;
+const THROW_LOB = 90;
+const FK_MIN = 175; // driven free kick — a firm pass at min, a rocket at full hold
+const FK_MAX = 300;
+const FK_LOB = 55;
+const CK_MIN = 195; // corner cross
+const CK_MAX = 280;
+const CK_LOB = 105; // lofted into the box
 
 function clampf(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
@@ -433,58 +451,88 @@ export function aimRestart(match: Match, dx: number, dy: number): void {
   }
 }
 
-// Release a pending manual restart along its current aim. A throw-in is a soft
-// lob whose aim is forced infield (so it can't be thrown straight back out); a
-// free kick is a driven ball in any direction the taker faces.
+// Release a pending manual restart along its current aim, with power from how
+// long action was held (charge). A throw-in is a soft lob forced infield (so it
+// can't be thrown straight back out); a free kick is a driven ball that can't be
+// booted out over a nearby touchline; a corner is a lofted cross kept inside the
+// box quadrant (never back out over the byline / touchline).
 export function deliverRestartAimed(state: GameState, match: Match): void {
   const a = match.awaitRestart;
   if (!a) return;
   const t = a.taker;
-  const isThrow = a.kind === 'throw';
   let nx = a.dx;
   let ny = a.dy;
   let len = Math.hypot(nx, ny);
   if (len < 0.1) {
-    // No aim held: throw straight infield, free kick straight up the pitch.
-    nx = isThrow ? (t.x < CX ? 1 : -1) : 0;
-    ny = isThrow ? 0 : t.attacksTop ? -1 : 1;
+    // No aim held: sensible default per kind.
+    if (a.kind === 'throw') {
+      nx = t.x < CX ? 1 : -1;
+      ny = 0;
+    } else if (a.kind === 'freekick') {
+      nx = 0;
+      ny = t.attacksTop ? -1 : 1;
+    } else {
+      nx = (t.x < CX ? 1 : -1) * 0.7;
+      ny = (t.attacksTop ? 1 : -1) * 0.7; // into the box
+    }
     len = Math.hypot(nx, ny) || 1;
   }
   nx /= len;
   ny /= len;
-  if (isThrow) {
+
+  if (a.kind === 'throw') {
     const infield = t.x < CX ? 1 : -1; // +x from the left line, -x from the right
     if (nx * infield < 0.2) {
       nx = infield * 0.5; // clamp an outward aim back into the field
-      const ren = Math.hypot(nx, ny) || 1;
-      nx /= ren;
-      ny /= ren;
     }
-  } else {
-    // Free kick taken near a touchline: the aim point is clamped inside the
-    // pitch, but kickToward still launches at full power along the aim — so an
-    // outward aim flies PAST the clamp and straight out for a throw to the other
-    // team. Kill any outward component near the line so it stays in (parallel or
-    // infield). Midfield free kicks keep full directional freedom.
+  } else if (a.kind === 'freekick') {
+    // Near a touchline the aim point is clamped inside the pitch, but the ball is
+    // launched at full power along the aim — an outward aim flies PAST the clamp
+    // and out for a throw. Kill any outward component near the line.
     const NEAR_LINE = 40;
     const inward = t.x > FIELD_R - NEAR_LINE ? -1 : t.x < FIELD_L + NEAR_LINE ? 1 : 0;
-    if (inward !== 0 && nx * inward < 0) {
-      nx = 0; // run it up/down the line instead of booting it out
-      const ren = Math.hypot(nx, ny);
-      if (ren < 0.1) {
-        ny = t.attacksTop ? -1 : 1; // pure-outward aim: play it up the pitch
-      } else {
-        nx /= ren;
-        ny /= ren;
-      }
-    }
+    if (inward !== 0 && nx * inward < 0) nx = 0; // run it up/down the line, don't boot it out
+  } else {
+    // Corner: keep the cross inside the box quadrant — never aim back out over
+    // the byline or the touchline next to the flag.
+    const xInto = t.x < CX ? 1 : -1; // toward the centre
+    const yInto = t.attacksTop ? 1 : -1; // away from the byline, into the field
+    if (nx * xInto < 0) nx = 0;
+    if (ny * yInto < 0) ny = 0;
   }
+  const ren = Math.hypot(nx, ny);
+  if (ren < 0.1) {
+    // Aim collapsed by the clamp: fall back to a sensible into-pitch direction.
+    nx = a.kind === 'corner' ? (t.x < CX ? 1 : -1) * 0.7 : 0;
+    ny = t.attacksTop ? (a.kind === 'corner' ? 1 : -1) : a.kind === 'corner' ? -1 : 1;
+    const l2 = Math.hypot(nx, ny) || 1;
+    nx /= l2;
+    ny /= l2;
+  } else {
+    nx /= ren;
+    ny /= ren;
+  }
+
+  // Power scales with the charge held; loft per kind.
+  const frac = clampf(a.charge / MAX_RESTART_CHARGE, 0, 1);
+  let power: number;
+  let lob: number;
+  if (a.kind === 'throw') {
+    power = THROW_MIN + frac * (THROW_MAX - THROW_MIN);
+    lob = THROW_LOB;
+  } else if (a.kind === 'freekick') {
+    power = FK_MIN + frac * (FK_MAX - FK_MIN);
+    lob = FK_LOB;
+  } else {
+    power = CK_MIN + frac * (CK_MAX - CK_MIN);
+    lob = CK_LOB;
+  }
+
   const tx = clampf(t.x + nx * RESTART_DIST, FIELD_L + 4, FIELD_R - 4);
   const ty = clampf(t.y + ny * RESTART_DIST, FIELD_T + 4, FIELD_B - 4);
   t.dir = dirFromVec(nx, ny);
   state.ball.controlLock = 0;
-  if (isThrow) kickToward(state, t, tx, ty, THROW_POWER, THROW_LOB);
-  else kickToward(state, t, tx, ty, FK_POWER, FK_LOB);
+  kickToward(state, t, tx, ty, power, lob);
   match.awaitRestart = null;
   match.restart = null;
   match.phase = 'play';
@@ -598,15 +646,28 @@ export function updateMatch(state: GameState, match: Match, dt: number): void {
         beginKickoff(state, match, match.kickoffTeam);
       } else {
         const r = match.restart;
-        // A human team's throw-in / free kick is handed to the player to aim and
-        // release; everything else (and all AI restarts) is auto-delivered.
-        if (r && (r.kind === 'throw' || r.kind === 'freekick') && match.humanTeams[r.taker.team]) {
+        // A human team's throw-in / free kick / corner is handed to the player to
+        // aim and release; everything else (and all AI restarts) is auto-delivered.
+        if (
+          r &&
+          (r.kind === 'throw' || r.kind === 'freekick' || r.kind === 'corner') &&
+          match.humanTeams[r.taker.team]
+        ) {
           const t = r.taker;
-          // Default aim: a throw goes infield from the line; a free kick points
-          // up the pitch toward the goal the taker attacks.
-          const dx = r.kind === 'throw' ? (t.x < CX ? 1 : -1) : 0;
-          const dy = r.kind === 'throw' ? 0 : t.attacksTop ? -1 : 1;
-          match.awaitRestart = { taker: t, team: t.team, kind: r.kind, dx, dy, t: 0 };
+          const kind = r.kind; // narrowed to the manual-restart union
+          const fs = t.attacksTop ? -1 : 1; // toward the goal the taker attacks
+          // Default aim: a throw goes infield from the line; a free kick points up
+          // the pitch; a corner crosses toward the penalty spot (infield + into
+          // the box).
+          let dx = 0;
+          let dy = 0;
+          if (kind === 'throw') dx = t.x < CX ? 1 : -1;
+          else if (kind === 'freekick') dy = fs;
+          else {
+            dx = (t.x < CX ? 1 : -1) * 0.7; // in toward the centre
+            dy = -fs * 0.7; // into the box, away from the byline (opposite of attack dir)
+          }
+          match.awaitRestart = { taker: t, team: t.team, kind, dx, dy, t: 0, charge: 0, charging: false };
         } else {
           deliverRestart(state, match); // throw it in / kick it out to play
           match.phase = 'play';

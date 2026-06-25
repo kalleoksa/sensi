@@ -145,4 +145,7 @@ export interface GameState {
   teamSlideCd: [number, number];
   // The on-pitch referee (trails play; brandishes cards at fouls).
   referee: Referee;
+  // Set while positioning a restart that has no offside (throw-in): the support
+  // calculator then lets attackers position beyond the last defender.
+  suppressOffside?: boolean;
 }

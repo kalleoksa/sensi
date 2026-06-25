@@ -8,7 +8,7 @@ import { VIEW_W, VIEW_H, FIELD_T, FIELD_B } from './world';
 import { drawText, drawTextCentered } from './sprites/font';
 import { makeList, listMove, drawList, DEFAULT_STYLE, type ListStyle, type ListView } from './menu';
 import { consumeMenuInput, consumeMatchControls, clearActionEdges } from './input';
-import { emitSfx, setCrowdIntensity } from './audio';
+import { emitSfx, setCrowdIntensity, startTheme, stopTheme } from './audio';
 import {
   makeSession,
   stepSession,
@@ -66,7 +66,7 @@ const CONTROL_ROWS: [string, string][] = [
   ['TACKLE', 'TAP  (OFF BALL)'],
   ['SLIDE', 'HOLD  (OFF BALL)'],
   ['HEADER', 'AUTOMATIC'],
-  ['THROW / F-KICK', 'AIM + ACTION'],
+  ['THROW/FK/CORNER', 'AIM, HOLD POWER'],
   ['PAUSE / QUIT', 'P / ESC'],
 ];
 
@@ -954,6 +954,9 @@ export function makeApp(deps: AppDeps): App {
   return {
     update(dt: number): void {
       frames++;
+      // Theme tune plays across the menus, hushed once a match is live.
+      if (screen === 'match') stopTheme();
+      else startTheme();
       switch (screen) {
         case 'title':
           updateTitle();

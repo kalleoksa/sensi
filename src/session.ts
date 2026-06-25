@@ -96,19 +96,35 @@ export function stepSession(s: Session, dt: number): void {
   const twoPlayer = config.controlMode === '2p';
   const input = consumeInputs(twoPlayer);
 
-  // Manual restart: a human is lining up a throw-in or free kick. Aim with the
-  // stick, press action to release. Meanwhile the other players move into shape
-  // (attackers spread forward, defenders mark) rather than coasting in a clump.
+  // Manual restart: a human is lining up a throw-in, free kick or corner. Aim
+  // with the stick, HOLD action to build power, release to deliver. Meanwhile
+  // the other players move into shape (a throw-in/free-kick spreads the teams; a
+  // corner keeps its snapped box layout).
   if (match.awaitRestart) {
-    const taker = match.awaitRestart.taker; // capture before release may clear it
-    const frame = match.awaitRestart.team === 0 ? input.p1 : input.p2;
+    const a = match.awaitRestart;
+    const taker = a.taker; // capture before release may clear it
+    const kind = a.kind;
+    const frame = a.team === 0 ? input.p1 : input.p2;
     if (frame) {
       aimRestart(match, frame.dx, frame.dy);
-      if (frame.pressed) deliverRestartAimed(state, match); // may set awaitRestart = null
+      if (frame.pressed) {
+        a.charging = true; // a fresh press starts charging (ignores a held-over key)
+        a.charge = 0;
+        a.t = 0;
+      }
+      if (a.charging && frame.down) {
+        a.charge = Math.min(a.charge + dt, 0.7);
+        a.t = 0;
+      }
+      if (a.charging && frame.released) deliverRestartAimed(state, match); // power from charge
     }
-    // Shape the other players while we wait — but only if the throw/kick hasn't
-    // just been released this frame (deliverRestartAimed clears awaitRestart).
-    if (match.awaitRestart) positionForRestart(state, taker, dt);
+    // Shape the other players while we wait — but only if the ball hasn't just
+    // been released this frame (deliverRestartAimed clears awaitRestart). A
+    // corner holds its box layout (coast); a throw-in has no offside.
+    if (match.awaitRestart) {
+      if (kind === 'corner') coastPlayers(state, dt);
+      else positionForRestart(state, taker, dt, kind === 'throw');
+    }
     stepBall(state.ball, dt);
     updateMatch(state, match, dt);
     stepReferee(state.referee, state.ball, dt);
@@ -145,7 +161,7 @@ export function stepSession(s: Session, dt: number): void {
     // Throw-in / free-kick setup: shape the teams (attackers spread into
     // attacking positions, defenders mark) instead of leaving everyone clustered
     // where the ball went out. Corners/penalties keep their own snap placement.
-    positionForRestart(state, match.restart.taker, dt);
+    positionForRestart(state, match.restart.taker, dt, match.restart.kind === 'throw');
   } else {
     // Not in open play (goal celebration, half/full-time, corner/penalty/goal-
     // kick setup): keep bodies moving naturally so the diving keeper falls

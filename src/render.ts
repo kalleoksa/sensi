@@ -179,6 +179,17 @@ export function makeRenderer(
         ctx.fillRect(Math.round(ox + nx * i), Math.round(oy + ny * i), 1, 1);
       }
       ctx.fillRect(Math.round(ox + nx * 17) - 1, Math.round(oy + ny * 17) - 1, 3, 3); // arrowhead
+
+      // Power bar above the taker while charging the delivery (held action).
+      if (a.charging) {
+        const frac = Math.min(1, a.charge / 0.7);
+        const hx = Math.round(ox) - 6;
+        const hy = Math.round(oy) - 12;
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(hx, hy, 14, 3);
+        ctx.fillStyle = frac > 0.75 ? 'rgb(230,80,40)' : 'rgb(230,220,60)';
+        ctx.fillRect(hx + 1, hy + 1, Math.round(12 * frac), 1);
+      }
     }
 
     // 3.6 Referee's card: a small yellow/red rectangle held up by his head while
