@@ -71,7 +71,7 @@ export interface Match {
   awaitRestart: {
     taker: Player;
     team: 0 | 1;
-    kind: 'throw' | 'freekick' | 'corner';
+    kind: 'throw' | 'freekick' | 'corner' | 'goalkick';
     dx: number;
     dy: number;
     t: number;
@@ -101,6 +101,9 @@ const FK_LOB = 55;
 const CK_MIN = 195; // corner cross
 const CK_MAX = 280;
 const CK_LOB = 105; // lofted into the box
+const GK_MIN = 225; // goal kick — a short ball out at min, a long punt at full hold
+const GK_MAX = 340;
+const GK_LOB = 110; // lofted clearance
 
 function clampf(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
@@ -468,9 +471,9 @@ export function deliverRestartAimed(state: GameState, match: Match): void {
     if (a.kind === 'throw') {
       nx = t.x < CX ? 1 : -1;
       ny = 0;
-    } else if (a.kind === 'freekick') {
+    } else if (a.kind === 'freekick' || a.kind === 'goalkick') {
       nx = 0;
-      ny = t.attacksTop ? -1 : 1;
+      ny = t.attacksTop ? -1 : 1; // up the pitch toward the goal the taker attacks
     } else {
       nx = (t.x < CX ? 1 : -1) * 0.7;
       ny = (t.attacksTop ? 1 : -1) * 0.7; // into the box
@@ -492,6 +495,12 @@ export function deliverRestartAimed(state: GameState, match: Match): void {
     const NEAR_LINE = 40;
     const inward = t.x > FIELD_R - NEAR_LINE ? -1 : t.x < FIELD_L + NEAR_LINE ? 1 : 0;
     if (inward !== 0 && nx * inward < 0) nx = 0; // run it up/down the line, don't boot it out
+  } else if (a.kind === 'goalkick') {
+    // Goal kick: never aim back toward our own goal (the keeper would boot it
+    // into his own net). Kill any backward component — it goes up the pitch or
+    // square, never behind.
+    const fwd = t.attacksTop ? -1 : 1; // toward the goal the keeper's team attacks
+    if (ny * fwd < 0) ny = 0;
   } else {
     // Corner: keep the cross inside the box quadrant — never aim back out over
     // the byline or the touchline next to the flag.
@@ -523,6 +532,9 @@ export function deliverRestartAimed(state: GameState, match: Match): void {
   } else if (a.kind === 'freekick') {
     power = FK_MIN + frac * (FK_MAX - FK_MIN);
     lob = FK_LOB;
+  } else if (a.kind === 'goalkick') {
+    power = GK_MIN + frac * (GK_MAX - GK_MIN);
+    lob = GK_LOB;
   } else {
     power = CK_MIN + frac * (CK_MAX - CK_MIN);
     lob = CK_LOB;
@@ -650,19 +662,18 @@ export function updateMatch(state: GameState, match: Match, dt: number): void {
         // aim and release; everything else (and all AI restarts) is auto-delivered.
         if (
           r &&
-          (r.kind === 'throw' || r.kind === 'freekick' || r.kind === 'corner') &&
+          (r.kind === 'throw' || r.kind === 'freekick' || r.kind === 'corner' || r.kind === 'goalkick') &&
           match.humanTeams[r.taker.team]
         ) {
           const t = r.taker;
           const kind = r.kind; // narrowed to the manual-restart union
           const fs = t.attacksTop ? -1 : 1; // toward the goal the taker attacks
-          // Default aim: a throw goes infield from the line; a free kick points up
-          // the pitch; a corner crosses toward the penalty spot (infield + into
-          // the box).
+          // Default aim: a throw goes infield from the line; a free kick / goal
+          // kick points up the pitch; a corner crosses toward the penalty spot.
           let dx = 0;
           let dy = 0;
           if (kind === 'throw') dx = t.x < CX ? 1 : -1;
-          else if (kind === 'freekick') dy = fs;
+          else if (kind === 'freekick' || kind === 'goalkick') dy = fs;
           else {
             dx = (t.x < CX ? 1 : -1) * 0.7; // in toward the centre
             dy = -fs * 0.7; // into the box, away from the byline (opposite of attack dir)

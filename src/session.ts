@@ -123,7 +123,7 @@ export function stepSession(s: Session, dt: number): void {
     // corner holds its box layout (coast); a throw-in has no offside.
     if (match.awaitRestart) {
       if (kind === 'corner') coastPlayers(state, dt);
-      else positionForRestart(state, taker, dt, kind === 'throw');
+      else positionForRestart(state, taker, dt, kind === 'throw' || kind === 'goalkick');
     }
     stepBall(state.ball, dt);
     updateMatch(state, match, dt);
@@ -156,12 +156,14 @@ export function stepSession(s: Session, dt: number): void {
   } else if (
     match.phase === 'dead' &&
     match.restart &&
-    (match.restart.kind === 'throw' || match.restart.kind === 'freekick')
+    (match.restart.kind === 'throw' || match.restart.kind === 'freekick' || match.restart.kind === 'goalkick')
   ) {
-    // Throw-in / free-kick setup: shape the teams (attackers spread into
-    // attacking positions, defenders mark) instead of leaving everyone clustered
-    // where the ball went out. Corners/penalties keep their own snap placement.
-    positionForRestart(state, match.restart.taker, dt, match.restart.kind === 'throw');
+    // Throw-in / free-kick / goal-kick setup: shape the teams (attackers spread
+    // into attacking positions, defenders mark) instead of leaving everyone
+    // clustered. Corners/penalties keep their own snap placement. Throw-ins and
+    // goal kicks have no offside.
+    const noOff = match.restart.kind === 'throw' || match.restart.kind === 'goalkick';
+    positionForRestart(state, match.restart.taker, dt, noOff);
   } else {
     // Not in open play (goal celebration, half/full-time, corner/penalty/goal-
     // kick setup): keep bodies moving naturally so the diving keeper falls
