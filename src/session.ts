@@ -9,7 +9,7 @@ import { makeBall, stepBall, setPitch } from './ball';
 import { controlHuman, resolvePossession, resolveSlideTackles, resolveHeaders } from './player';
 import { makeMatch, updateMatch, startMatch, aimRestart, deliverRestartAimed, type Match } from './match';
 import { makeTeams } from './team';
-import { updateTeamAi, coastPlayers } from './ai';
+import { updateTeamAi, coastPlayers, positionForRestart } from './ai';
 import { makeReferee, stepReferee } from './referee';
 import { makeRng } from './rng';
 import type { GameState, Player } from './state';
@@ -97,15 +97,15 @@ export function stepSession(s: Session, dt: number): void {
   const input = consumeInputs(twoPlayer);
 
   // Manual restart: a human is lining up a throw-in or free kick. Aim with the
-  // stick, press action to release. Other bodies coast; the clock stays paused
-  // (handled in updateMatch) until the ball is back in play.
+  // stick, press action to release. Meanwhile the other players move into shape
+  // (attackers spread forward, defenders mark) rather than coasting in a clump.
   if (match.awaitRestart) {
     const frame = match.awaitRestart.team === 0 ? input.p1 : input.p2;
     if (frame) {
       aimRestart(match, frame.dx, frame.dy);
       if (frame.pressed) deliverRestartAimed(state, match);
     }
-    coastPlayers(state, dt);
+    positionForRestart(state, match.awaitRestart.taker, dt);
     stepBall(state.ball, dt);
     updateMatch(state, match, dt);
     stepReferee(state.referee, state.ball, dt);
@@ -134,10 +134,19 @@ export function stepSession(s: Session, dt: number): void {
     resolveSlideTackles(state);
     resolveHeaders(state);
     resolvePossession(state, dt);
+  } else if (
+    match.phase === 'dead' &&
+    match.restart &&
+    (match.restart.kind === 'throw' || match.restart.kind === 'freekick')
+  ) {
+    // Throw-in / free-kick setup: shape the teams (attackers spread into
+    // attacking positions, defenders mark) instead of leaving everyone clustered
+    // where the ball went out. Corners/penalties keep their own snap placement.
+    positionForRestart(state, match.restart.taker, dt);
   } else {
-    // Not in open play (goal celebration, dead-ball setup, half/full-time):
-    // keep bodies moving naturally so the diving keeper falls instead of
-    // freezing in the air, and runners coast to a stop.
+    // Not in open play (goal celebration, half/full-time, corner/penalty/goal-
+    // kick setup): keep bodies moving naturally so the diving keeper falls
+    // instead of freezing in the air, and runners coast to a stop.
     coastPlayers(state, dt);
   }
   stepBall(state.ball, dt);

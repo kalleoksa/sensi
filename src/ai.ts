@@ -445,6 +445,40 @@ export function coastPlayers(state: GameState, dt: number): void {
   }
 }
 
+// Shape the teams during a throw-in / free-kick setup, instead of leaving every
+// player frozen where the ball went dead (all clustered "under the ball"). The
+// taker is treated as the carrier so the duty system spreads the restart team
+// into attacking positions (support runs up the pitch) and drops the other team
+// into its defending shape. The taker holds the ball; no one tackles (the ball
+// is dead — press/cover just sit off it). Ball-untouched: only players move.
+export function positionForRestart(state: GameState, taker: Player, dt: number): void {
+  const prev = state.carrier;
+  state.carrier = taker; // so duties read as "taker's team in possession"
+  computeDuties(state);
+  for (const p of state.players) {
+    if (p === taker || p.sentOff) continue;
+    switch (p.duty) {
+      case 'support':
+        supportAi(p, dt);
+        break;
+      case 'mark':
+        markAi(state, p, dt);
+        break;
+      case 'cover':
+      case 'press': // don't lunge at a dead ball — just sit off it
+        coverAi(state, p, dt);
+        break;
+      case 'gk':
+        gkAi(state, p, dt);
+        break;
+      default: // 'hold' (and the taker's 'carrier' is excluded above)
+        holdAi(state, p, dt);
+        break;
+    }
+  }
+  state.carrier = prev;
+}
+
 // Press the ball; if the opponent carrier is in slide range and this player is
 // off cooldown, lunge into a tackle (clean if it reaches the ball, a foul if it
 // only catches the man).
