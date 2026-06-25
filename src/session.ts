@@ -10,6 +10,7 @@ import { controlHuman, resolvePossession, resolveSlideTackles, resolveHeaders } 
 import { makeMatch, updateMatch, startMatch, aimThrow, deliverThrow, type Match } from './match';
 import { makeTeams } from './team';
 import { updateTeamAi, coastPlayers } from './ai';
+import { makeReferee, stepReferee } from './referee';
 import { makeRng } from './rng';
 import type { GameState, Player } from './state';
 import type { TeamDef } from './teams/data';
@@ -68,6 +69,7 @@ export function makeSession(config: MatchConfig): Session {
     controlled2: null,
     foul: null,
     teamSlideCd: [0, 0],
+    referee: makeReferee(),
   };
   setPitch(config.pitch.friction, config.pitch.bounce);
   const match = makeMatch();
@@ -106,6 +108,7 @@ export function stepSession(s: Session, dt: number): void {
     coastPlayers(state, dt);
     stepBall(state.ball, dt);
     updateMatch(state, match, dt);
+    stepReferee(state.referee, state.ball, dt);
     updateCamera(state.camera, state.ball.x, state.ball.y, state.ball.vx, state.ball.vy, dt);
     return;
   }
@@ -139,6 +142,7 @@ export function stepSession(s: Session, dt: number): void {
   }
   stepBall(state.ball, dt);
   updateMatch(state, match, dt);
+  stepReferee(state.referee, state.ball, dt);
   updateCamera(state.camera, state.ball.x, state.ball.y, state.ball.vx, state.ball.vy, dt);
 }
 

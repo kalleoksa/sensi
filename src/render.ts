@@ -96,6 +96,7 @@ export function makeRenderer(
       if (p.sentOff) continue;
       drawPlayerShadow(ctx, p, cam, alpha);
     }
+    drawPlayerShadow(ctx, state.referee, cam, alpha);
     const b = state.ball;
     {
       const bx = lerp(b.prevX, b.x, alpha);
@@ -116,6 +117,8 @@ export function makeRenderer(
       if (p.sentOff) continue;
       items.push({ y: lerp(p.prevY, p.y, alpha), draw: () => drawPlayer(ctx, p, cam, alpha) });
     }
+    const ref = state.referee;
+    items.push({ y: lerp(ref.prevY, ref.y, alpha), draw: () => drawPlayer(ctx, ref, cam, alpha) });
     items.push({
       y: lerp(b.prevY, b.y, alpha),
       draw: () => {
@@ -175,6 +178,17 @@ export function makeRenderer(
         ctx.fillRect(Math.round(ox + nx * i), Math.round(oy + ny * i), 1, 1);
       }
       ctx.fillRect(Math.round(ox + nx * 17) - 1, Math.round(oy + ny * 17) - 1, 3, 3); // arrowhead
+    }
+
+    // 3.6 Referee's card: a small yellow/red rectangle held up by his head while
+    // he books an offender at the foul spot.
+    if (ref.cardTimer > 0 && ref.cardColor) {
+      const rx = Math.round(lerp(ref.prevX, ref.x, alpha) - cam.x) + 4;
+      const ry = Math.round(lerp(ref.prevY, ref.y, alpha) - cam.y) - 14;
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(rx - 1, ry - 1, 5, 8);
+      ctx.fillStyle = ref.cardColor === 'red' ? 'rgb(206,40,34)' : 'rgb(232,196,40)';
+      ctx.fillRect(rx, ry, 3, 6);
     }
 
     // 4. Goal frames on top (net occludes the ball when it's inside).

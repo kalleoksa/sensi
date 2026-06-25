@@ -100,6 +100,15 @@ export interface Player {
   hair: RGB;
 }
 
+// The match referee. A persistent on-pitch figure that trails play (Kick Off
+// style) and is purely cosmetic — the ball and players pass through him. He
+// reuses the Player shape so the sprite renderer draws him with no extra code;
+// the extra fields drive the card he brandishes at a foul.
+export interface Referee extends Player {
+  cardTimer: number; // seconds left brandishing a card at a foul (0 = none)
+  cardColor: 'yellow' | 'red' | null;
+}
+
 export interface Ball {
   x: number;
   y: number;
@@ -134,4 +143,6 @@ export interface GameState {
   // Per-team cooldown (seconds) gating how often that team's AI commits a slide
   // tackle, so slides stay occasional rather than constant.
   teamSlideCd: [number, number];
+  // The on-pitch referee (trails play; brandishes cards at fouls).
+  referee: Referee;
 }

@@ -7,6 +7,7 @@
 
 import { dirFromVec, type Ball, type GameState, type Player } from './state';
 import { kickToward } from './player';
+import { brandishCard } from './referee';
 import { emitSfx } from './audio';
 import { homeForSlot } from './team';
 import {
@@ -389,14 +390,14 @@ function judgeCard(
   match: Match,
   foul: { offender: Player; deniedAttack: boolean; y: number },
   isPenalty: boolean,
-): void {
+): 'yellow' | 'red' | null {
   const off = foul.offender;
   const ownGoal = attacksTop(off.team, match.half) ? FIELD_B : FIELD_T;
   // A foul in a dangerous area is a booking: a conceded penalty, or a foul in
   // the offender's own half (a cynical stop while defending).
   const ownHalf = Math.abs(foul.y - ownGoal) < (FIELD_B - FIELD_T) / 2;
   const bookable = isPenalty || ownHalf;
-  if (!bookable) return;
+  if (!bookable) return null;
 
   if (off.yellow) {
     off.sentOff = true; // second yellow => red
@@ -412,6 +413,7 @@ function judgeCard(
     match.cardColor = 'yellow';
   }
   match.cardFlash = CARD_FLASH;
+  return match.cardColor;
 }
 
 // Point a pending manual throw-in. Called from the session each frame with the
@@ -612,7 +614,9 @@ export function updateMatch(state: GameState, match: Match, dt: number): void {
       const fy = Math.min(FIELD_B - 4, Math.max(FIELD_T + 4, f.y));
       placeRestart(state, match, fx, fy, f.team, 'freekick');
     }
-    judgeCard(match, f, pen);
+    const card = judgeCard(match, f, pen);
+    // Send the referee to the spot to brandish the card he just decided to show.
+    if (card) brandishCard(state.referee, f.x, f.y, card);
     return;
   }
 
