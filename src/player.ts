@@ -59,6 +59,17 @@ const PASS_MIN = 22; // ignore teammates closer than this
 const PASS_RANGE = 150; // and farther than this
 const PASS_LEAD_TIME = 0.35; // seconds of the receiver's run to lead into
 
+// Diving header (human): press the button as an airborne ball arrives and the
+// controlled player hurls himself at it — the SWOS signature move. The ball
+// rockets on in the held direction (or at the goal he attacks) and the player
+// dives after it, landing via the header-state physics in integrate().
+const DHEAD_R = 22; // reach: press within this of the airborne ball
+const DHEAD_Z_MIN = 5;
+const DHEAD_Z_MAX = 30;
+const DHEAD_SPEED = 265; // pace off the diving forehead
+const DHEAD_LUNGE = 115; // how hard the player throws himself at it
+const DHEAD_JUMP = 42; // low, flat dive arc
+
 // Headers: an airborne ball at head height near an outfielder is nodded on.
 const HEAD_Z_MIN = 7; // below this the ball is controllable on the ground
 const HEAD_Z_MAX = 26; // above this it sails over everyone's heads
@@ -425,6 +436,7 @@ export function resolveHeaders(state: GameState): void {
   let bestD = HEAD_R;
   for (const p of state.players) {
     if (p.role === 'gk' || p.sentOff) continue; // keepers catch/dive, they don't head
+    if (p === state.controlled || p === state.controlled2) continue; // humans time their own (diving) headers
     if (p.state === 'fallen' || p.state === 'slide' || p.state === 'header') continue;
     const d = Math.hypot(p.x - b.x, p.y - b.y);
     if (d < bestD) {
@@ -510,6 +522,37 @@ export function resolveSlideTackles(state: GameState): void {
   }
 }
 
+// Try a diving header: only when an airborne ball is within reach at head-ish
+// height. Aims along the held dpad, or at the goal this player attacks.
+function tryDivingHeader(state: GameState, p: Player, input: InputFrame): boolean {
+  const b = state.ball;
+  if (b.controlLock > 0 || b.z < DHEAD_Z_MIN || b.z > DHEAD_Z_MAX) return false;
+  if (Math.hypot(b.x - p.x, b.y - p.y) > DHEAD_R) return false;
+  let ax = input.dx;
+  let ay = input.dy;
+  if (ax === 0 && ay === 0) {
+    ax = CX - p.x;
+    ay = (p.attacksTop ? FIELD_T : FIELD_B) - p.y;
+  }
+  const l = Math.hypot(ax, ay) || 1;
+  ax /= l;
+  ay /= l;
+  b.vx = ax * DHEAD_SPEED;
+  b.vy = ay * DHEAD_SPEED;
+  b.vz = -22; // headed down — the classic bouncing diving header
+  b.spin = 0;
+  b.aftertouch = 0.22;
+  b.controlLock = 0.25;
+  b.owner = p;
+  p.dir = dirFromVec(ax, ay);
+  p.state = 'header';
+  p.vz = DHEAD_JUMP;
+  p.vx = ax * DHEAD_LUNGE;
+  p.vy = ay * DHEAD_LUNGE;
+  emitSfx('shot', 0.75);
+  return true;
+}
+
 // Drive the human-controlled player from the input frame.
 export function controlHuman(state: GameState, p: Player, input: InputFrame, dt: number): void {
   // Tick down lock + buffer + poke-reach window.
@@ -533,8 +576,8 @@ export function controlHuman(state: GameState, p: Player, input: InputFrame, dt:
       p.vy = 0;
       if (p.state !== 'kick') p.state = 'idle';
     }
-  } else if (p.state === 'slide') {
-    // Friction on the slide lunge.
+  } else if (p.state === 'slide' || p.state === 'header') {
+    // Friction on the slide / diving-header lunge.
     p.vx *= Math.exp(-3 * dt);
     p.vy *= Math.exp(-3 * dt);
   } else {
@@ -553,11 +596,15 @@ export function controlHuman(state: GameState, p: Player, input: InputFrame, dt:
   if (input.pressed && locked) p.bufferedTap = 0.08;
 
   if (pressed && !locked) {
-    // Start charging: a carrier builds shot power; a defender arms a tackle
-    // (tap on release = standing poke, hold past SLIDE_HOLD = committed slide).
     p.bufferedTap = 0;
-    p.charging = true;
-    p.charge = 0;
+    if (!isCarrier && tryDivingHeader(state, p, input)) {
+      // Hurled himself at the airborne ball — the press is spent.
+    } else {
+      // Start charging: a carrier builds shot power; a defender arms a tackle
+      // (tap on release = standing poke, hold past SLIDE_HOLD = committed slide).
+      p.charging = true;
+      p.charge = 0;
+    }
   }
   if (p.charging) {
     if (input.down) {
@@ -613,7 +660,7 @@ export function moveToward(
       p.vy = 0;
       if (p.state !== 'kick') p.state = 'idle';
     }
-  } else if (p.state === 'slide') {
+  } else if (p.state === 'slide' || p.state === 'header') {
     p.vx *= Math.exp(-3 * dt);
     p.vy *= Math.exp(-3 * dt);
   } else {
