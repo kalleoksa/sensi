@@ -319,6 +319,38 @@ export function resolvePossession(state: GameState, dt: number): void {
   void dt;
 }
 
+// Keeper saves: a ball flying at catchable height within arm's reach of a
+// keeper is smothered. Without this, only balls low enough to control
+// (z < 4) could be stopped by anyone, so a shot crossing the line between
+// waist height and the bar (z 4..16) sailed through every body — lofted
+// shots and dropping crosses were literally unsavable. Ground balls stay
+// with resolvePossession (a normal pickup).
+const CATCH_R = 8; // horizontal reach to get hands on it
+const CATCH_TOP = 15; // arm reach above the keeper's own height (incl. mid-dive)
+const CATCH_BELOW = 6; // reach below a mid-dive keeper (his body spans downward)
+export function resolveKeeperSaves(state: GameState): void {
+  const b = state.ball;
+  if (b.controlLock > 0 || b.z < 4) return;
+  for (const p of state.players) {
+    if (p.role !== 'gk' || p.sentOff || p.state === 'fallen') continue;
+    const relZ = b.z - p.z;
+    if (relZ < -CATCH_BELOW || relZ > CATCH_TOP) continue;
+    if (Math.hypot(p.x - b.x, p.y - b.y) > CATCH_R) continue;
+    // Gathered: the ball dies in his hands and drops at his feet, where
+    // resolvePossession turns it into a normal keeper pickup (then a clearance).
+    const impact = Math.hypot(b.vx, b.vy, b.vz);
+    b.vx *= 0.06;
+    b.vy *= 0.06;
+    b.vz = 0;
+    b.spin = 0;
+    b.aftertouch = 0;
+    b.owner = p;
+    b.controlLock = 0.25; // a beat while he gathers — no instant poach
+    emitSfx('tackle', clamp(impact / 300, 0.4, 1));
+    return;
+  }
+}
+
 // Headers: a ball flying at head height near an outfielder gets nodded on. An
 // attacker in the opponent half heads down at goal; otherwise the player heads
 // it clear, upfield and away from his own goal. The header-er does a short hop
