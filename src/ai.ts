@@ -15,8 +15,8 @@
 
 import { Dir, type GameState, type Player } from './state';
 import { moveToward, kickToward, integrate, startSlideToward, PLAYER_SPEED } from './player';
-import { GROUND_FRICTION } from './ball';
-import { FIELD_T, FIELD_B, FIELD_L, FIELD_R, PLAY_W, CX, GOAL_W } from './world';
+import { GROUND_FRICTION, GRAVITY } from './ball';
+import { FIELD_T, FIELD_B, FIELD_L, FIELD_R, PLAY_W, CX, GOAL_W, GOAL_HEIGHT, PEN_BOX_W } from './world';
 
 const AI_SPEED = PLAYER_SPEED * 0.94; // a touch slower than the human
 const SHOOT_RANGE = 130;
@@ -90,6 +90,12 @@ const DIVE_REACH_MIN = 6; // smaller offsets are covered just by standing/tracki
 const DIVE_REACH_MAX = 44; // beyond this the keeper can't get there — it's a goal
 const DIVE_FLIGHT_MIN = 0.34; // min airborne time — keeps the dive deliberate, low
 const DIVE_FLIGHT_MAX = 0.6; // cap so a far shot doesn't float forever
+const DIVE_RISE_MAX = 60; // extra upward launch to meet a high ball (px/s)
+
+// Claiming: a loose ball (or a cross dropping) this deep into his own box is
+// the keeper's — he attacks it instead of spectating from his line. Kept short
+// of the penalty spot so he never strays far from goal.
+const CLAIM_DEPTH = 34;
 
 function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
@@ -794,27 +800,56 @@ function gkAi(state: GameState, p: Player, dt: number): void {
   }
   const lineY = ownGoalY(p) + (p.attacksTop ? -7 : 7);
 
-  // Dive at a low shot heading goalward that will cross the line offset from the
-  // keeper — too far to cover by tracking, but within a dive's reach.
+  // Dive at a shot heading goalward that will cross the line offset from the
+  // keeper — too far to cover by tracking, but within a dive's reach. Judged on
+  // the ball's PREDICTED height at the line: anything arriving under the bar
+  // is diveable (gating on the ball's current z left every shot that crossed
+  // above control height but under the bar unsavable).
   const towardGoal = p.attacksTop ? b.vy > 60 : b.vy < -60;
-  if (towardGoal && b.z < 12) {
+  if (towardGoal) {
     const t = (lineY - b.y) / b.vy; // time until the ball reaches the line
     if (t > 0 && t < DIVE_LOOKAHEAD) {
       const predX = b.x + b.vx * t;
-      const onTarget = Math.abs(predX - CX) < GOAL_W / 2 + 6;
+      // Height when it crosses; a negative prediction means it bounces first —
+      // treat that as a low ball.
+      const predZ = Math.max(0, b.z + b.vz * t - (GRAVITY * t * t) / 2);
+      const onTarget = Math.abs(predX - CX) < GOAL_W / 2 + 6 && predZ < GOAL_HEIGHT + 2;
       const offset = predX - p.x;
       if (onTarget && Math.abs(offset) > DIVE_REACH_MIN && Math.abs(offset) < DIVE_REACH_MAX) {
         const flight = clamp(t, DIVE_FLIGHT_MIN, DIVE_FLIGHT_MAX);
         p.state = 'gkdive';
         p.dir = offset > 0 ? Dir.R : Dir.L;
         // Reach the crossing point exactly as the ball arrives (capped), in a
-        // low arc that lands ~flight later — so the keeper meets the low ball
-        // instead of sailing past it.
+        // low arc that lands ~flight later; a high ball adds upward launch so
+        // the dive rises to meet it (the mid-air catch does the rest).
         p.vx = clamp(offset / t, -DIVE_SPEED, DIVE_SPEED);
         p.vy = 0;
-        p.vz = (GK_GRAVITY * flight) / 2;
+        p.vz = (GK_GRAVITY * flight) / 2 + clamp(predZ / t, 0, DIVE_RISE_MAX);
         return;
       }
+    }
+  }
+
+  // Claim a loose ball in his box: a cross dropping in, or a ball squirting
+  // free near goal, is attacked at full speed instead of watched from the
+  // line. Only when NO ONE has it on the toe (never charge a carrier — that's
+  // the dive/track game) and it's inside the box width, short of the spot.
+  if (state.carrier === null) {
+    const goalLine = ownGoalY(p);
+    const into = intoField(p);
+    // Where a flighted ball comes down; a rolling ball is taken where it is.
+    let cx2 = b.x;
+    let cy2 = b.y;
+    if (b.z > 4) {
+      const tLand = (b.vz + Math.sqrt(b.vz * b.vz + 2 * GRAVITY * b.z)) / GRAVITY;
+      cx2 += b.vx * tLand;
+      cy2 += b.vy * tLand;
+    }
+    const depth = (cy2 - goalLine) * into;
+    if (depth > -4 && depth < CLAIM_DEPTH && Math.abs(cx2 - CX) < PEN_BOX_W / 2 - 8) {
+      const ty2 = clamp((cy2 - goalLine) * into, 2, CLAIM_DEPTH);
+      moveToward(p, clamp(cx2, CX - PEN_BOX_W / 2 + 8, CX + PEN_BOX_W / 2 - 8), goalLine + into * ty2, dt, AI_SPEED, 1);
+      return;
     }
   }
 
