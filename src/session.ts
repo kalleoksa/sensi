@@ -20,7 +20,7 @@ import { makeTeams } from './team';
 import { updateTeamAi, coastPlayers, positionForRestart } from './ai';
 import { makeReferee, stepReferee } from './referee';
 import { makeRng } from './rng';
-import type { GameState, Player } from './state';
+import type { GameState, Player, PlayerState } from './state';
 import type { TeamDef } from './teams/data';
 import type { FormationId } from './formations';
 import type { Pitch } from './options';
@@ -39,6 +39,17 @@ export interface MatchConfig {
   offside: boolean; // enforce the offside rule
 }
 
+// One recorded tick of open play for the goal replay: ball (x,y,z) and each
+// player's (x,y,z,dir,stateIdx,distance). Recorded only during continuous
+// 'play' (the buffer resets whenever play restarts, so a replay never shows a
+// dead-ball teleport), capped to the last REPLAY_MAX ticks.
+export interface ReplayFrame {
+  b: [number, number, number];
+  p: [number, number, number, number, number, number][];
+}
+export const REPLAY_STATES: PlayerState[] = ['idle', 'run', 'kick', 'header', 'slide', 'fallen', 'gkdive'];
+export const REPLAY_MAX = 300; // 5s at 60Hz
+
 export interface Session {
   state: GameState;
   match: Match;
@@ -47,6 +58,9 @@ export interface Session {
   // Live penalty shootout settling a drawn knockout tie (see shootout.ts);
   // created by the app when full time ends level in a knockout round.
   shootout?: Shootout | null;
+  // Rolling open-play recording for the post-goal replay (see app.ts).
+  history: ReplayFrame[];
+  lastPhase: string;
 }
 
 // Where the ball will be after t seconds: rolling under ground friction, or in
@@ -112,7 +126,7 @@ export function makeSession(config: MatchConfig): Session {
   startMatch(state, match);
   // Center the camera on the ball at kickoff.
   updateCamera(state.camera, state.ball.x, state.ball.y, 0, 0, 1);
-  return { state, match, config, paused: false };
+  return { state, match, config, paused: false, history: [], lastPhase: 'kickoff' };
 }
 
 // Which teams a human drives: 1p => team 0 only, 2p => both, cpu => neither.
@@ -192,6 +206,11 @@ export function stepSession(s: Session, dt: number): void {
     return;
   }
 
+  // A fresh spell of open play starts a fresh replay recording, so a replay
+  // never spans a dead-ball teleport.
+  if (match.phase === 'play' && s.lastPhase !== 'play') s.history.length = 0;
+  s.lastPhase = match.phase;
+
   // Freeze player control during the post-goal pause, but keep the ball rolling
   // so it travels into the net during the goal celebration.
   if (match.phase === 'play') {
@@ -270,9 +289,20 @@ export function stepSession(s: Session, dt: number): void {
     coastPlayers(state, dt);
   }
   stepBall(state.ball, dt);
+  if (match.phase === 'play') recordReplayFrame(s); // incl. the goal-crossing tick
   updateMatch(state, match, dt);
   stepReferee(state.referee, state.ball, dt);
   updateCamera(state.camera, state.ball.x, state.ball.y, state.ball.vx, state.ball.vy, dt);
+}
+
+function recordReplayFrame(s: Session): void {
+  const st = s.state;
+  const b = st.ball;
+  s.history.push({
+    b: [b.x, b.y, b.z],
+    p: st.players.map((p) => [p.x, p.y, p.z, p.dir, REPLAY_STATES.indexOf(p.state), p.distance]),
+  });
+  if (s.history.length > REPLAY_MAX) s.history.shift();
 }
 
 // Re-export view dims so callers don't need world.ts just for layout.

@@ -30,6 +30,7 @@ your window with nearest-neighbour filtering for crisp pixels.
 | **WASD** | move — Player 1 (red) |
 | **Space** | tap = pass · hold = shot power · release = strike |
 | after a kick | hold a direction for **aftertouch** (curl / loft) |
+| Space (airborne ball near) | **diving header** — aims along the held direction, else at goal |
 | Space (no ball) | slide tackle |
 | **Arrows + Enter** | Player 2 (blue) — when two-player is on |
 | **2** | toggle two-player |
@@ -75,6 +76,8 @@ Touch drives Player 1 alongside the keyboard; two-player stays keyboard-only.
 - Drawn knockout ties (Cup / World Cup KO rounds) go to a real penalty
   shootout — aim across the goal mouth, hold for power — instead of a
   simulated result.
+- Goals get a half-speed **action replay** of the move (any button skips);
+  press the button as an airborne ball arrives for a **diving header**.
 - Procedural art: mottled grass, pitch markings, 3D-read goals whose nets catch
   the ball, a rowed crowd and ad boards, and an 8-direction player sprite atlas
   (idle / run / kick / slide / fallen) recoloured per team kit.
