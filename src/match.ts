@@ -42,7 +42,7 @@ export interface Match {
   score: [number, number]; // [team0, team1]
   // kickoff = ready freeze; dead = goal celebration / out-of-bounds restart;
   // halftime / fulltime = end-of-half freezes (fulltime is terminal).
-  phase: 'kickoff' | 'play' | 'dead' | 'halftime' | 'fulltime';
+  phase: 'kickoff' | 'play' | 'dead' | 'halftime' | 'fulltime' | 'shootout';
   deadTimer: number; // generic phase countdown (kickoff / dead / halftime)
   deadReset: boolean; // true => return to kickoff when the dead timer ends
   restart: Restart | null; // pending delivery executed when the pause ends
@@ -58,6 +58,8 @@ export interface Match {
   outTimer: number;
   // Brief HUD card flash after a booking / sending-off.
   cardFlash: number;
+  // Brief OFFSIDE banner after the flag goes up.
+  offsideFlash: number;
   cardColor: 'yellow' | 'red' | null;
   // Which teams a human controls (set by the session from the control mode). A
   // human team's throw-in / free kick is aimed and released by the player rather
@@ -126,6 +128,7 @@ export function makeMatch(): Match {
     outTimer: 0,
     cardFlash: 0,
     cardColor: null,
+    offsideFlash: 0,
     humanTeams: [false, false],
     awaitRestart: null,
   };
@@ -151,6 +154,7 @@ export function resetKickoff(state: GameState): void {
   b.aftertouch = 0;
   b.controlLock = 0;
   b.owner = null;
+  state.offsideWatch = null;
   for (const p of state.players) {
     if (p.sentOff) continue; // stays off the pitch, a man down
     p.x = p.homeX;
@@ -248,6 +252,7 @@ function placeRestart(
   b.controlLock = RESTART_LOCK; // dead until delivered
   b.owner = null;
   state.carrier = null;
+  state.offsideWatch = null;
 
   // Goal kicks are taken by the keeper; everything else by the nearest
   // outfielder of the restart team.
@@ -544,7 +549,7 @@ export function deliverRestartAimed(state: GameState, match: Match): void {
   const ty = clampf(t.y + ny * RESTART_DIST, FIELD_T + 4, FIELD_B - 4);
   t.dir = dirFromVec(nx, ny);
   state.ball.controlLock = 0;
-  kickToward(state, t, tx, ty, power, lob);
+  kickToward(state, t, tx, ty, power, lob, false);
   match.awaitRestart = null;
   match.restart = null;
   match.phase = 'play';
@@ -577,26 +582,26 @@ function deliverRestart(state: GameState, match: Match): void {
   if (r.kind === 'throw') {
     const tx = target ? target.x : b.x < CX ? b.x + 50 : b.x - 50;
     const ty = target ? target.y : b.y;
-    kickToward(state, t, tx, ty, 165, 95); // lobbed in from the line
+    kickToward(state, t, tx, ty, 165, 95, false); // lobbed in from the line
   } else if (r.kind === 'goalkick') {
     const midY = (FIELD_T + FIELD_B) / 2;
-    kickToward(state, t, CX + (b.x < CX ? 50 : -50), midY, 310, 120); // long punt
+    kickToward(state, t, CX + (b.x < CX ? 50 : -50), midY, 310, 120, false); // long punt
   } else if (r.kind === 'corner') {
     // Corner: cross toward the penalty spot of that end.
     const spotY = b.y < (FIELD_T + FIELD_B) / 2 ? FIELD_T + PEN_SPOT_D : FIELD_B - PEN_SPOT_D;
-    kickToward(state, t, CX, spotY, 250, 105);
+    kickToward(state, t, CX, spotY, 250, 105, false);
   } else if (r.kind === 'penalty') {
     // Spot kick: drive it low into a corner of the goal; the keeper dives.
     const goalLine = attacksTop(t.team, match.half) ? FIELD_T : FIELD_B;
     const side = t.x <= CX ? 1 : -1; // aim across goal, away from the run-up lean
-    kickToward(state, t, CX + side * (GOAL_W / 2 - 3), goalLine, 360, 24);
+    kickToward(state, t, CX + side * (GOAL_W / 2 - 3), goalLine, 360, 24, false);
   } else {
     // Free kick: play it forward to the best teammate, else upfield toward the
     // opponent goal the taker attacks.
     const fwd = t.team === 0 ? FIELD_T + 100 : FIELD_B - 100;
     const tx = target ? target.x : CX;
     const ty = target ? target.y : fwd;
-    kickToward(state, t, tx, ty, 235, 70);
+    kickToward(state, t, tx, ty, 235, 70, false);
   }
 }
 
@@ -624,6 +629,7 @@ function beginOut(match: Match, b: Ball, kind: RestartKind, team: 0 | 1, x: numb
 export function updateMatch(state: GameState, match: Match, dt: number): void {
   if (match.flash > 0) match.flash = Math.max(0, match.flash - dt);
   if (match.cardFlash > 0) match.cardFlash = Math.max(0, match.cardFlash - dt);
+  if (match.offsideFlash > 0) match.offsideFlash = Math.max(0, match.offsideFlash - dt);
 
   // Ready freeze before a kickoff: hold, then release control to play.
   if (match.phase === 'kickoff') {
@@ -642,6 +648,8 @@ export function updateMatch(state: GameState, match: Match, dt: number): void {
   }
 
   if (match.phase === 'fulltime') return; // match over; R restarts (see main.ts)
+
+  if (match.phase === 'shootout') return; // driven by shootout.ts via the app
 
   if (match.phase === 'dead') {
     // A human is lining up a restart: hold here until they release it (or the
@@ -721,6 +729,19 @@ export function updateMatch(state: GameState, match: Match, dt: number): void {
     const card = judgeCard(match, f, pen);
     // Send the referee to the spot to brandish the card he just decided to show.
     if (card) brandishCard(state.referee, f.x, f.y, card);
+    return;
+  }
+
+  // Linesman: the offside flag went up (see checkOffside). Free kick to the
+  // defending team where the flagged player stood at the kick.
+  if (state.offside) {
+    const o = state.offside;
+    state.offside = null;
+    state.offsideWatch = null;
+    const fx = Math.min(FIELD_R - 4, Math.max(FIELD_L + 4, o.x));
+    const fy = Math.min(FIELD_B - 4, Math.max(FIELD_T + 4, o.y));
+    match.offsideFlash = 1.4;
+    placeRestart(state, match, fx, fy, o.team, 'freekick');
     return;
   }
 

@@ -773,7 +773,7 @@ function holdAi(state: GameState, p: Player, dt: number): void {
   moveToward(p, tx, ty, dt, AI_SPEED * 0.92);
 }
 
-function gkAi(state: GameState, p: Player, dt: number): void {
+export function gkAi(state: GameState, p: Player, dt: number): void {
   const b = state.ball;
 
   // Mid-dive: the keeper is airborne and committed — coast laterally under

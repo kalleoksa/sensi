@@ -63,7 +63,12 @@ Touch drives Player 1 alongside the keyboard; two-player stays keyboard-only.
 - Two AI teams in a 4-3-3 with formations, pressing/positioning behaviour and
   goalkeepers (distinct kit).
 - Match rules: goals + scoring, kickoffs, and real restarts — throw-ins, goal
-  kicks and corners with the taker delivering the ball.
+  kicks and corners with the taker delivering the ball. The offside rule is
+  enforced (toggle it in Options, SWOS-style): the first flagged player to
+  touch a pass concedes a free kick where he stood.
+- Drawn knockout ties (Cup / World Cup KO rounds) go to a real penalty
+  shootout — aim across the goal mouth, hold for power — instead of a
+  simulated result.
 - Procedural art: mottled grass, pitch markings, 3D-read goals whose nets catch
   the ball, a rowed crowd and ad boards, and an 8-direction player sprite atlas
   (idle / run / kick / slide / fallen) recoloured per team kit.

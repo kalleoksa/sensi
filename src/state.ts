@@ -148,4 +148,15 @@ export interface GameState {
   // Set while positioning a restart that has no offside (throw-in): the support
   // calculator then lets attackers position beyond the last defender.
   suppressOffside?: boolean;
+  // Offside rule (optional, from match options). Armed on every open-play kick
+  // with the kicker's teammates then standing in an offside position; if one of
+  // them is the FIRST to touch the ball, the flag goes up (state.offside) and
+  // the referee awards a free kick where the player stood at the kick.
+  offsideEnabled?: boolean;
+  offsideWatch?: {
+    kicker: Player;
+    team: 0 | 1;
+    flagged: { p: Player; x: number; y: number }[];
+  } | null;
+  offside?: { team: 0 | 1; x: number; y: number } | null; // free kick to `team`
 }

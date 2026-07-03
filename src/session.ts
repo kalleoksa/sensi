@@ -12,6 +12,7 @@ import {
   resolveSlideTackles,
   resolveHeaders,
   resolveKeeperSaves,
+  checkOffside,
   PLAYER_SPEED,
 } from './player';
 import { makeMatch, updateMatch, startMatch, aimRestart, deliverRestartAimed, type Match } from './match';
@@ -23,6 +24,7 @@ import type { GameState, Player } from './state';
 import type { TeamDef } from './teams/data';
 import type { FormationId } from './formations';
 import type { Pitch } from './options';
+import type { Shootout } from './shootout';
 
 export type ControlMode = '1p' | '2p' | 'cpu';
 
@@ -34,6 +36,7 @@ export interface MatchConfig {
   awayFormation: FormationId;
   halfLength: number; // seconds per half
   pitch: Pitch;
+  offside: boolean; // enforce the offside rule
 }
 
 export interface Session {
@@ -41,6 +44,9 @@ export interface Session {
   match: Match;
   config: MatchConfig;
   paused: boolean;
+  // Live penalty shootout settling a drawn knockout tie (see shootout.ts);
+  // created by the app when full time ends level in a knockout round.
+  shootout?: Shootout | null;
 }
 
 // Where the ball will be after t seconds: rolling under ground friction, or in
@@ -95,6 +101,9 @@ export function makeSession(config: MatchConfig): Session {
     foul: null,
     teamSlideCd: [0, 0],
     referee: makeReferee(),
+    offsideEnabled: config.offside,
+    offsideWatch: null,
+    offside: null,
   };
   setPitch(config.pitch.friction, config.pitch.bounce);
   const match = makeMatch();
@@ -179,6 +188,7 @@ export function stepSession(s: Session, dt: number): void {
     resolveKeeperSaves(state); // before headers: the keeper's ball beats a leap
     resolveHeaders(state);
     resolvePossession(state, dt);
+    checkOffside(state); // judge the first touch after a watched kick
   } else if (
     match.phase === 'dead' &&
     match.restart &&

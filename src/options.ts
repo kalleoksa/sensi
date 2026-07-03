@@ -55,6 +55,7 @@ export const PITCHES: Pitch[] = [
 export interface MatchOptions {
   lengthIndex: number;
   pitchIndex: number;
+  offside: boolean; // enforce the offside rule (SWOS-style toggle, default on)
 }
 
-export const DEFAULT_OPTIONS: MatchOptions = { lengthIndex: 0, pitchIndex: 0 };
+export const DEFAULT_OPTIONS: MatchOptions = { lengthIndex: 0, pitchIndex: 0, offside: true };
