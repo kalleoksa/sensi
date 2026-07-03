@@ -61,7 +61,9 @@ Touch drives Player 1 alongside the keyboard; two-player stays keyboard-only.
 - Sticky-but-loose dribbling, passes, power shots, slide tackles that knock
   players down, and tackle-by-contact.
 - Two AI teams in a 4-3-3 with formations, pressing/positioning behaviour and
-  goalkeepers (distinct kit).
+  goalkeepers (distinct kit). Every nation carries a 1-5 star skill rating
+  (shown in the team browser) that scales its players' pace, how cleanly the
+  AI passes and shoots, and simulated competition results.
 - Match rules: goals + scoring, kickoffs, and real restarts — throw-ins, goal
   kicks and corners with the taker delivering the ball. The offside rule is
   enforced (toggle it in Options, SWOS-style): the first flagged player to

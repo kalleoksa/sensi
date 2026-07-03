@@ -17,7 +17,7 @@ import { emitSfx } from './audio';
 
 export const GRAVITY = 360; // px/s^2 on vz (lighter = balls hang longer)
 export const BOUNCE = 0.6; // vertical restitution
-export const GROUND_FRICTION = 2.2; // per-second velocity decay while rolling
+export const GROUND_FRICTION = 2.0; // per-second velocity decay while rolling
 export const AIR_DRAG = 0.15; // light horizontal drag in flight
 export const BALL_RADIUS = 1.5;
 export const BAR_RESTITUTION = 0.5; // how lively the ball rebounds off the crossbar

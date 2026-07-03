@@ -713,6 +713,13 @@ export function makeApp(deps: AppDeps): App {
         const sw = 3 * 16 + 2 * 5;
         drawSwatch(team.kit, Math.round((VIEW_W - sw) / 2), VIEW_H - 64);
         drawTextCentered(ctx, team.name, 0, VIEW_W, VIEW_H - 38, DEFAULT_STYLE.on, 1);
+        // Skill pips: 1..5 stars of team strength (pace, passing, sim results).
+        const pipW = 6;
+        const px0 = Math.round(VIEW_W / 2 - (5 * pipW + 4 * 3) / 2);
+        for (let i = 0; i < 5; i++) {
+          ctx.fillStyle = i < team.skill ? 'rgb(248,236,120)' : 'rgba(255,255,255,0.18)';
+          ctx.fillRect(px0 + i * (pipW + 3), VIEW_H - 26, pipW, 4);
+        }
       }
     } else {
       drawList(ctx, ts.list, VIEW_W / 2, 78, DEFAULT_STYLE);

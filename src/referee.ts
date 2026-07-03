@@ -46,6 +46,7 @@ export function makeReferee(): Referee {
     distance: 0,
     team: 0,
     isHuman: false,
+    speed: 66, // trails play; never needs to win a footrace
     role: 'mid',
     duty: 'hold',
     markTarget: null,

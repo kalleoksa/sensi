@@ -2,7 +2,7 @@
 // bottom. Home anchors are laid out in each team's own half and stored in
 // world coords on the player; the AI shifts them toward the ball during play.
 
-import { makePlayer, type PlayerInit } from './player';
+import { makePlayer, PLAYER_SPEED, type PlayerInit } from './player';
 import type { Player } from './state';
 import type { Rng } from './rng';
 import {
@@ -33,6 +33,10 @@ export function homeForSlot(
 }
 
 function makeTeam(team: 0 | 1, def: TeamDef, slots: Slot[], rng: Rng, gkKit: Kit): Player[] {
+  // Team skill scales pace: a 5-star side runs at full PLAYER_SPEED, each star
+  // below costs 2.5% — enough that Brazil pulls away from a minnow, small
+  // enough that any team stays playable.
+  const speed = PLAYER_SPEED * (1 - (5 - def.skill) * 0.025);
   return slots.map((slot) => {
     const kit = slot.role === 'gk' ? gkKit : def.kit;
     // Half-1 placement: team 0 attacks the top, team 1 the bottom.
@@ -43,6 +47,7 @@ function makeTeam(team: 0 | 1, def: TeamDef, slots: Slot[], rng: Rng, gkKit: Kit
       team,
       isHuman: false,
       role: slot.role,
+      speed,
       shirt: kit.shirt,
       shorts: kit.shorts,
       socks: kit.socks,

@@ -74,6 +74,7 @@ export interface Player {
   team: 0 | 1;
   isHuman: boolean;
   role: Role;
+  speed: number; // top run speed (px/s), scaled by the team's skill rating
   duty: Duty; // transient AI duty for this tick (see Duty)
   markTarget: Player | null; // opponent this player marks when duty === 'mark'
   supportX: number; // best-support-spot target when duty === 'support'
