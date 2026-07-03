@@ -42,9 +42,10 @@ chevron marks who you're driving.
 ### Touch (phones / tablets)
 
 On coarse-pointer devices (or with `?touch=1` in the URL) an on-screen overlay
-appears and the game fills the **whole screen**: the view is resized to the
-display's aspect (landscape widens it — the full pitch width plus extended
-stands; portrait lengthens it), so there are no black bars:
+appears and the game fills the **whole screen** with a zoomed camera: the match
+view is the largest screen-shaped window that fits inside the stadium, so
+players render large and the camera scrolls (landscape shows the full pitch
+width; portrait the full length). Menus use their own full-bleed layout:
 
 - **left thumb** — floating joystick (appears where you touch): move, aim set
   pieces, aftertouch.
