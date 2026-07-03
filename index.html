@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
     <title>Sensi</title>
     <style>
       html, body {
@@ -10,11 +13,19 @@
         height: 100%;
         background: #1a1a1a;
         overflow: hidden;
+        /* Keep touches driving the game, not page scroll / pinch zoom. */
+        overscroll-behavior: none;
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
       }
       body {
         display: flex;
         align-items: center;
         justify-content: center;
+        /* Track the dynamic viewport on mobile (browser chrome show/hide). */
+        height: 100dvh;
       }
       #game {
         image-rendering: pixelated;

@@ -56,28 +56,38 @@ function watched(code: string): boolean {
   );
 }
 
+// Register a code going down/up. Shared by the real keyboard listeners and the
+// touch overlay (touch.ts), which synthesizes the same codes — so menus, match
+// controls and gameplay behave identically on both without extra plumbing.
+export function pressCode(code: string): void {
+  if (held.has(code)) return;
+  held.add(code);
+  uiEdges.add(code);
+  for (const c of CHANNELS) {
+    if (c.action.includes(code) && !c.actionDown) {
+      c.actionDown = true;
+      c.pressedEdge = true;
+    }
+  }
+}
+
+export function releaseCode(code: string): void {
+  if (!held.delete(code)) return;
+  for (const c of CHANNELS) {
+    if (c.action.includes(code) && c.actionDown && !c.action.some((k) => held.has(k))) {
+      c.actionDown = false;
+      c.releasedEdge = true;
+    }
+  }
+}
+
 export function initInput(): void {
   window.addEventListener('keydown', (e) => {
     if (e.repeat) return;
     if (watched(e.code)) e.preventDefault();
-    held.add(e.code);
-    uiEdges.add(e.code);
-    for (const c of CHANNELS) {
-      if (c.action.includes(e.code) && !c.actionDown) {
-        c.actionDown = true;
-        c.pressedEdge = true;
-      }
-    }
+    pressCode(e.code);
   });
-  window.addEventListener('keyup', (e) => {
-    held.delete(e.code);
-    for (const c of CHANNELS) {
-      if (c.action.includes(e.code) && c.actionDown) {
-        c.actionDown = false;
-        c.releasedEdge = true;
-      }
-    }
-  });
+  window.addEventListener('keyup', (e) => releaseCode(e.code));
   // Drop held state if the tab loses focus (prevents stuck keys). Pending action
   // edges go too: a press that happened just before the tab lost focus must not
   // come back as a kick or a tackle whenever the player returns.

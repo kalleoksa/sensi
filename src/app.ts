@@ -539,13 +539,19 @@ export function makeApp(deps: AppDeps): App {
     }
 
     if (c.exit) {
-      // Abandon the match. A competition match quit part-way is dropped whole:
-      // the tournament stays saved (CONTINUE picks it back up at the hub) but the
-      // in-memory run is detached so nothing else can post a result into it.
-      abandonSession();
-      screen = 'mainMenu';
-      emitSfx('uiSelect');
-      return;
+      // Esc is a two-step quit: first pause (an "are you sure" beat), then quit
+      // from the paused state, so one stray press or tap can't abandon a match.
+      // A competition match quit part-way is dropped whole: the tournament stays
+      // saved (CONTINUE picks it back up at the hub) but the in-memory run is
+      // detached so nothing else can post a result into it.
+      if (!session.paused) {
+        session.paused = true;
+      } else {
+        abandonSession();
+        screen = 'mainMenu';
+        emitSfx('uiSelect');
+        return;
+      }
     }
     if (c.controls) {
       showControls = !showControls;
@@ -995,7 +1001,7 @@ export function makeApp(deps: AppDeps): App {
       drawControlsList(70);
       drawTextCentered(ctx, 'C / P  RESUME', 0, VIEW_W, VIEW_H - 16, SUBTLE, 1);
     } else if (session.paused) {
-      drawTextCentered(ctx, 'C  CONTROLS', 0, VIEW_W, VIEW_H - 16, SUBTLE, 1);
+      drawTextCentered(ctx, 'C CONTROLS   ESC QUIT', 0, VIEW_W, VIEW_H - 16, SUBTLE, 1);
     }
   }
 
