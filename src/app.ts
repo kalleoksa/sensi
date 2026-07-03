@@ -491,11 +491,17 @@ export function makeApp(deps: AppDeps): App {
       return;
     }
 
+    // Esc is a two-step quit: first pause (an "are you sure" beat), then quit
+    // from the paused state — so one stray press/tap can't abandon a match.
     if (c.exit) {
-      session = null;
-      screen = 'mainMenu';
-      emitSfx('uiSelect');
-      return;
+      if (!session.paused) {
+        session.paused = true;
+      } else {
+        session = null;
+        screen = 'mainMenu';
+        emitSfx('uiSelect');
+        return;
+      }
     }
     if (c.controls) {
       showControls = !showControls;
@@ -929,7 +935,7 @@ export function makeApp(deps: AppDeps): App {
       drawControlsList(70);
       drawTextCentered(ctx, 'C / P  RESUME', 0, VIEW_W, VIEW_H - 16, SUBTLE, 1);
     } else if (session.paused) {
-      drawTextCentered(ctx, 'C  CONTROLS', 0, VIEW_W, VIEW_H - 16, SUBTLE, 1);
+      drawTextCentered(ctx, 'C CONTROLS   ESC QUIT', 0, VIEW_W, VIEW_H - 16, SUBTLE, 1);
     }
   }
 

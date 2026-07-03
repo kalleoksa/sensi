@@ -38,6 +38,21 @@ your window with nearest-neighbour filtering for crisp pixels.
 The action button auto-controls the player on your team nearest the ball; a
 chevron marks who you're driving.
 
+### Touch (phones / tablets)
+
+On coarse-pointer devices (or with `?touch=1` in the URL) an on-screen overlay
+appears and the canvas scales to fill the screen — play in **landscape** so the
+side gutters hold your thumbs:
+
+- **left thumb** — floating joystick (appears where you touch): move, aim set
+  pieces, aftertouch.
+- **right thumb** — the whole lower-right zone is the **KICK** button: tap =
+  pass, hold = shot power, hold with no ball = slide.
+- **top-right** — pause and back buttons. During a match, back pauses first;
+  pressing it again while paused quits (no accidental exits).
+
+Touch drives Player 1 alongside the keyboard; two-player stays keyboard-only.
+
 ## What's in it
 
 - Fixed-timestep 60 Hz simulation with interpolated rendering; deterministic,
