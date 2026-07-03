@@ -267,6 +267,15 @@ export function makeRenderer(
     ctx.fillRect(clx - 2, ty - 2, cw + 4, 11);
     drawText(ctx, clockText, clx, ty, 'rgb(236,240,226)');
 
+    // 6b2. OFFSIDE banner while the flag is up.
+    if (match.offsideFlash > 0) {
+      const ow = measure('OFFSIDE', 1);
+      const ox = Math.round((VIEW_W - ow) / 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(ox - 3, 16, ow + 6, 11);
+      drawText(ctx, 'OFFSIDE', ox, 18, 'rgb(250,230,90)', 1);
+    }
+
     // 6c. Card flash: a coloured card top-centre after a booking / sending-off.
     if (match.cardFlash > 0 && match.cardColor) {
       const cardW = 7;
