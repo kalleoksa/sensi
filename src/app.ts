@@ -119,6 +119,8 @@ const TEAM_STYLE: ListStyle = { ...DEFAULT_STYLE, lineGap: 2 };
 export interface AppDeps {
   ctx: CanvasRenderingContext2D;
   renderMatch: (session: Session, alpha: number) => void;
+  // Touch devices switch between the zoomed match view and the menu view.
+  setMatchView?: (on: boolean) => void;
 }
 
 export interface App {
@@ -127,7 +129,7 @@ export interface App {
 }
 
 export function makeApp(deps: AppDeps): App {
-  const { ctx, renderMatch } = deps;
+  const { ctx, renderMatch, setMatchView } = deps;
 
   let screen: AppScreen = 'title';
   let frames = 0; // for the title blink
@@ -1158,6 +1160,7 @@ export function makeApp(deps: AppDeps): App {
   return {
     update(dt: number): void {
       frames++;
+      setMatchView?.(screen === 'match'); // no-ops unless it changes
       // Theme tune plays across the menus, hushed once a match is live.
       if (screen === 'match') stopTheme();
       else startTheme();
