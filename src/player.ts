@@ -46,9 +46,9 @@ const PRESSURE_LEAD = 6; // extra dribble lead at maximum pressure (heavy touch)
 // Kick tuning.
 const TAP_CHARGE = 0.16; // below this hold time, it's a pass not a shot
 const MAX_CHARGE = 0.7;
-const PASS_SPEED = 188;
-const SHOT_MIN = 210;
-const SHOT_MAX = 392;
+const PASS_SPEED = 225; // SWOS-pace: passes zip well ahead of the 72 px/s runners
+const SHOT_MIN = 240;
+const SHOT_MAX = 420;
 const SHOT_LOFT = 190; // vz at full power
 const AFTERTOUCH_WINDOW = 0.34;
 const CONTROL_LOCK = 0.28;
@@ -63,7 +63,7 @@ const PASS_LEAD_TIME = 0.35; // seconds of the receiver's run to lead into
 const HEAD_Z_MIN = 7; // below this the ball is controllable on the ground
 const HEAD_Z_MAX = 26; // above this it sails over everyone's heads
 const HEAD_R = 13; // horizontal reach to meet the ball
-const HEAD_SPEED = 165; // pace off the forehead
+const HEAD_SPEED = 185; // pace off the forehead
 const HEAD_JUMP = 78; // player's vertical pop when leaping to head
 const HEAD_GRAVITY = 360; // pulls the jumping header-er back down
 
@@ -73,6 +73,7 @@ export interface PlayerInit {
   team: 0 | 1;
   isHuman: boolean;
   role: Role;
+  speed?: number; // defaults to PLAYER_SPEED
   shirt: RGB;
   shorts: RGB;
   socks: RGB;
@@ -98,6 +99,7 @@ export function makePlayer(init: PlayerInit): Player {
     team: init.team,
     isHuman: init.isHuman,
     role: init.role,
+    speed: init.speed ?? PLAYER_SPEED,
     duty: 'hold',
     markTarget: null,
     supportX: init.x,
@@ -526,8 +528,8 @@ export function controlHuman(state: GameState, p: Player, input: InputFrame, dt:
   if (!locked) {
     if (input.dx !== 0 || input.dy !== 0) {
       const len = Math.hypot(input.dx, input.dy);
-      p.vx = (input.dx / len) * PLAYER_SPEED;
-      p.vy = (input.dy / len) * PLAYER_SPEED;
+      p.vx = (input.dx / len) * p.speed;
+      p.vy = (input.dy / len) * p.speed;
       p.dir = dirFromVec(input.dx, input.dy);
       if (p.state !== 'kick') p.state = 'run';
     } else {
@@ -596,7 +598,7 @@ export function moveToward(
   tx: number,
   ty: number,
   dt: number,
-  speed = PLAYER_SPEED,
+  speed = p.speed,
   arrive = 2,
 ): void {
   if (p.stateTimer > 0) p.stateTimer = Math.max(0, p.stateTimer - dt);
