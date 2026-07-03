@@ -253,6 +253,12 @@ function placeRestart(
   b.owner = null;
   state.carrier = null;
   state.offsideWatch = null;
+  // This restart supersedes any pending ball-out call. Without this, a foul /
+  // offside whistled while the ball was rolling out (the OUT_DELAY window)
+  // left the armed throw-in ticking under the free kick — which then turned
+  // into a phantom throw-in moments after the kick was taken.
+  match.outBall = null;
+  match.outTimer = 0;
 
   // Goal kicks are taken by the keeper; everything else by the nearest
   // outfielder of the restart team.
@@ -369,6 +375,8 @@ function placePenalty(state: GameState, match: Match, team: 0 | 1): void {
   b.controlLock = RESTART_LOCK;
   b.owner = null;
   state.carrier = null;
+  match.outBall = null; // the penalty supersedes any pending ball-out call
+  match.outTimer = 0;
 
   // Taker: nearest outfielder of the awarded team, stood just behind the ball.
   let taker: Player | null = null;
