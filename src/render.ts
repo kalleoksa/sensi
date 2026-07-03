@@ -3,6 +3,7 @@
 
 import { type GameState, type Player } from './state';
 import type { Camera } from './world';
+import { WORLD_W, WORLD_H } from './world';
 import type { Match } from './match';
 import { VIEW_W, VIEW_H } from './world';
 import type { BakedPitch } from './sprites/pitch_gen';
@@ -88,8 +89,32 @@ export function makeRenderer(
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, VIEW_W, VIEW_H);
 
-    // 1. Pitch (grass, lines, baked goal shadows).
-    ctx.drawImage(baked.canvas, -Math.round(cam.x), -Math.round(cam.y));
+    // 1. Pitch (grass, lines, baked goal shadows). On phone-shaped views the
+    // view outgrows the world on one axis (the camera pins centered): extend
+    // the stands outward by tiling strips taken from the world's own edges —
+    // 15px is one crowd-rail period, so the rail rhythm continues seamlessly.
+    // (The view outgrows at most one axis: landscape caps height at 320,
+    // portrait caps width at 384, both smaller than the world.)
+    const bx = -Math.round(cam.x);
+    const by = -Math.round(cam.y);
+    const S = 15;
+    if (bx > 0) {
+      for (let x = bx - S; x > -S; x -= S)
+        ctx.drawImage(baked.canvas, 0, 0, S, WORLD_H, x, by, S, WORLD_H);
+    }
+    if (bx + WORLD_W < VIEW_W) {
+      for (let x = bx + WORLD_W; x < VIEW_W; x += S)
+        ctx.drawImage(baked.canvas, WORLD_W - S, 0, S, WORLD_H, x, by, S, WORLD_H);
+    }
+    if (by > 0) {
+      for (let y = by - S; y > -S; y -= S)
+        ctx.drawImage(baked.canvas, 0, 0, WORLD_W, S, bx, y, WORLD_W, S);
+    }
+    if (by + WORLD_H < VIEW_H) {
+      for (let y = by + WORLD_H; y < VIEW_H; y += S)
+        ctx.drawImage(baked.canvas, 0, WORLD_H - S, WORLD_W, S, bx, y, WORLD_W, S);
+    }
+    ctx.drawImage(baked.canvas, bx, by);
 
     // 2. Dynamic shadows (drawn before entities).
     for (const p of state.players) {

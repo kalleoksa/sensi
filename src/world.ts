@@ -4,8 +4,19 @@
 // Internal render buffer (crisp-scaled to the window). Sized so the camera
 // shows the full pitch width plus most of its length — the zoomed-out SWOS read
 // where the 12px players sit small against the markings.
-export const VIEW_W = 384;
-export const VIEW_H = 320;
+//
+// On touch devices the view is resized to MATCH THE SCREEN'S ASPECT (see
+// main.ts) so the canvas fills the whole display: a landscape phone widens the
+// view (more pitch sideways), portrait lengthens it. ESM live bindings keep
+// every importer current; the renderer tiles crowd past the world edges when
+// the view outgrows the world.
+export let VIEW_W = 384;
+export let VIEW_H = 320;
+
+export function setViewSize(w: number, h: number): void {
+  VIEW_W = w;
+  VIEW_H = h;
+}
 
 // Playing field (touchline to touchline, goal line to goal line).
 // Aspect matches SWOS's measured proportions (~1.25:1 length:width) rather than
@@ -75,6 +86,10 @@ export function updateCamera(
   const k = 1 - Math.exp(-8 * dt);
   cam.x += (desiredX - cam.x) * k;
   cam.y += (desiredY - cam.y) * k;
-  cam.x = clamp(cam.x, 0, WORLD_W - VIEW_W);
-  cam.y = clamp(cam.y, 0, WORLD_H - VIEW_H);
+  // A view wider/taller than the world pins that axis centered (the renderer
+  // fills the overflow with crowd); otherwise clamp inside the world as usual.
+  if (VIEW_W >= WORLD_W) cam.x = (WORLD_W - VIEW_W) / 2;
+  else cam.x = clamp(cam.x, 0, WORLD_W - VIEW_W);
+  if (VIEW_H >= WORLD_H) cam.y = (WORLD_H - VIEW_H) / 2;
+  else cam.y = clamp(cam.y, 0, WORLD_H - VIEW_H);
 }
