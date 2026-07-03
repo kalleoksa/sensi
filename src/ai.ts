@@ -16,7 +16,7 @@
 import { Dir, type GameState, type Player } from './state';
 import { moveToward, kickToward, integrate, startSlideToward, PLAYER_SPEED } from './player';
 import { GROUND_FRICTION, GRAVITY } from './ball';
-import { FIELD_T, FIELD_B, FIELD_L, FIELD_R, PLAY_W, CX, GOAL_W, GOAL_HEIGHT, PEN_BOX_W } from './world';
+import { FIELD_T, FIELD_B, FIELD_L, FIELD_R, PLAY_W, PLAY_H, CX, GOAL_W, GOAL_HEIGHT, PEN_BOX_W } from './world';
 
 // AI players run a touch below their own top pace, so the human keeps a small
 // edge over an equal-skill side. p.speed itself is scaled by team skill.
@@ -804,6 +804,43 @@ function holdAi(state: GameState, p: Player, dt: number): void {
   moveToward(p, tx, ty, dt, aiSpeed(p) * 0.92);
 }
 
+const GK_HOLD = 0.45; // seconds a keeper holds a catch before distributing
+const GK_THROW_SPEED = 300;
+
+// Distribute a gathered ball: a real outlet, not the old blind punt at the
+// centre circle — which served the ball straight back to the opposing
+// shooters and looped shot -> catch -> punt -> shot forever.
+function gkDistribute(state: GameState, p: Player): void {
+  const goalLine = ownGoalY(p);
+  const into = intoField(p);
+  let best: Player | null = null;
+  let bestScore = -Infinity;
+  for (const m of state.players) {
+    if (m.team !== p.team || m === p || m.role === 'gk' || m.sentOff || m.state === 'fallen') continue;
+    const d = Math.hypot(m.x - p.x, m.y - p.y);
+    if (d < 70) continue; // too close to our goal to be an outlet
+    if (!isFinite(ballTravelTime(d, GK_THROW_SPEED))) continue;
+    if (!passSafe(state, p.x, p.y, m.x, m.y, p.team, GK_THROW_SPEED)) continue;
+    // Open men on the flanks, further upfield, make the best outlets.
+    const open = nearestEnemyDist(state, m.x, m.y, p.team);
+    const score = Math.min(open, 60) + Math.abs(m.x - CX) * 0.25 + advanceOf(p, p.y, m.y) * 0.2;
+    if (score > bestScore) {
+      bestScore = score;
+      best = m;
+    }
+  }
+  if (best) {
+    kickToward(state, p, best.x, best.y, GK_THROW_SPEED, 80);
+    return;
+  }
+  // Nothing safe on: hoof it long up the LESS CROWDED flank — never the middle.
+  const upY = goalLine + into * PLAY_H * 0.72;
+  const lx = FIELD_L + 50;
+  const rx = FIELD_R - 50;
+  const tx = nearestEnemyDist(state, lx, upY, p.team) >= nearestEnemyDist(state, rx, upY, p.team) ? lx : rx;
+  kickToward(state, p, tx, upY, 340, 120);
+}
+
 export function gkAi(state: GameState, p: Player, dt: number): void {
   const b = state.ball;
 
@@ -815,12 +852,26 @@ export function gkAi(state: GameState, p: Player, dt: number): void {
     return;
   }
 
-  // Cleared the ball if it ended up at the keeper's feet (caught a dive too).
+  // Gathered the ball (caught a dive too): hold it a beat like a real keeper,
+  // then distribute properly. (Human teams never reach this branch — the
+  // session hands their keeper's ball to the player to aim, SWOS-style.)
   if (state.carrier === p) {
     p.z = 0;
-    kickToward(state, p, CX + (b.x < CX ? 40 : -40), MID_Y, 300, 90);
+    if (!p.charging) {
+      p.charging = true; // (re)start the hold on a fresh catch
+      p.stateTimer = GK_HOLD;
+    }
+    const near = nearestOpponent(state, p);
+    if (p.stateTimer > 0 && near.d > 30) {
+      p.stateTimer = Math.max(0, p.stateTimer - dt);
+      p.vx = p.vy = 0;
+      return;
+    }
+    p.charging = false;
+    gkDistribute(state, p);
     return;
   }
+  p.charging = false; // not on the ball: any pending hold is void
   const lineY = ownGoalY(p) + (p.attacksTop ? -7 : 7);
 
   // Dive at a shot heading goalward that will cross the line offset from the

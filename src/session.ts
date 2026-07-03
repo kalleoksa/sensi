@@ -188,6 +188,39 @@ export function stepSession(s: Session, dt: number): void {
   // Freeze player control during the post-goal pause, but keep the ball rolling
   // so it travels into the net during the goal celebration.
   if (match.phase === 'play') {
+    // A human team's keeper who has gathered the ball distributes it BY HAND
+    // (SWOS-style): the same aim-and-charge set piece as a goal kick — stick
+    // aims, hold action for power — instead of an auto-punt to nowhere.
+    const kc = state.carrier;
+    if (kc && kc.role === 'gk' && match.humanTeams[kc.team]) {
+      const b = state.ball;
+      b.x = kc.x;
+      b.y = kc.y;
+      b.z = 0;
+      b.vx = b.vy = b.vz = b.spin = 0;
+      b.aftertouch = 0;
+      b.controlLock = 99; // dead in his hands until delivered
+      b.owner = kc;
+      state.carrier = null;
+      kc.vx = kc.vy = 0;
+      kc.z = 0;
+      kc.state = 'idle';
+      match.phase = 'dead';
+      match.deadTimer = 0;
+      match.deadReset = false;
+      match.restart = null;
+      match.awaitRestart = {
+        taker: kc,
+        team: kc.team,
+        kind: 'goalkick',
+        dx: 0,
+        dy: kc.attacksTop ? -1 : 1, // default: up the pitch
+        t: 0,
+        charge: 0,
+        charging: false,
+      };
+      return;
+    }
     if (config.controlMode === 'cpu') {
       // Watch mode: no humans, AI drives everyone (both controlled slots null).
       state.controlled = null;
