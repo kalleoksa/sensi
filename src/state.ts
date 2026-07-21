@@ -121,6 +121,10 @@ export interface Ball {
   vz: number;
   spin: number; // lateral curl accel applied during flight
   owner: Player | null; // last/again toucher for possession bookkeeping
+  // Who last DELIBERATELY kicked/threw the ball (strike, AI kick, restart
+  // delivery). Cleared by headers and tackle deflections. Drives the back-pass
+  // rule: a keeper may not pick up a ball a teammate kicked to him.
+  lastKick: Player | null;
   aftertouch: number; // seconds remaining in the aftertouch window
   controlLock: number; // seconds before a player may re-take possession
 }

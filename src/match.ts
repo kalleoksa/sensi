@@ -151,6 +151,7 @@ export function resetKickoff(state: GameState): void {
   b.aftertouch = 0;
   b.controlLock = 0;
   b.owner = null;
+  b.lastKick = null;
   for (const p of state.players) {
     if (p.sentOff) continue; // stays off the pitch, a man down
     p.x = p.homeX;
@@ -247,6 +248,7 @@ function placeRestart(
   b.aftertouch = 0;
   b.controlLock = RESTART_LOCK; // dead until delivered
   b.owner = null;
+  b.lastKick = null;
   state.carrier = null;
 
   // Goal kicks are taken by the keeper; everything else by the nearest
@@ -291,6 +293,10 @@ function placeRestart(
   // A corner is a set piece: push the attackers into the box and drop the
   // defenders in to mark, so the cross has targets at both ends.
   if (kind === 'corner') positionForCorner(state, team, y, taker);
+
+  // Opponents may not stand in the box while a goal kick is taken (updateMatch
+  // keeps shoving them out each frame until the ball is delivered).
+  if (kind === 'goalkick') clearGoalKickBox(state, taker);
 
   match.phase = 'dead';
   match.deadTimer = RESTART_DEAD;
@@ -343,6 +349,22 @@ function inPenaltyBox(x: number, y: number, attackTop: boolean): boolean {
   return Math.abs(x - CX) < PEN_BOX_W / 2 && Math.abs(y - goalLine) < PEN_BOX_D;
 }
 
+// Rule: opponents must stay outside the penalty box until a goal kick is taken.
+// Stand any opponent inside the taker's box (or drifting into it while the kick
+// is set up — the AI shape tracks the ball) at the edge of the box instead.
+function clearGoalKickBox(state: GameState, taker: Player): void {
+  const boxTop = !taker.attacksTop; // the box around the taker's own goal
+  const goalLine = boxTop ? FIELD_T : FIELD_B;
+  const into = boxTop ? 1 : -1;
+  for (const p of state.players) {
+    if (p.team === taker.team || p.sentOff) continue;
+    if (!inPenaltyBox(p.x, p.y, boxTop)) continue;
+    p.y = goalLine + into * (PEN_BOX_D + 6);
+    p.prevY = p.y;
+    p.vy = 0;
+  }
+}
+
 // Set up a penalty: ball on the spot, the taker behind it, the defending keeper
 // on his line, and everyone else cleared out of the box. The kick is taken when
 // the dead pause ends (deliverRestart).
@@ -363,6 +385,7 @@ function placePenalty(state: GameState, match: Match, team: 0 | 1): void {
   b.aftertouch = 0;
   b.controlLock = RESTART_LOCK;
   b.owner = null;
+  b.lastKick = null;
   state.carrier = null;
 
   // Taker: nearest outfielder of the awarded team, stood just behind the ball.
@@ -644,6 +667,11 @@ export function updateMatch(state: GameState, match: Match, dt: number): void {
   if (match.phase === 'fulltime') return; // match over; R restarts (see main.ts)
 
   if (match.phase === 'dead') {
+    // Goal kick pending (setting up or being aimed): opponents may not be in
+    // the penalty box until the ball is delivered — shove any back out that the
+    // per-frame restart shaping walked in.
+    const pending = match.awaitRestart ?? match.restart;
+    if (pending && pending.kind === 'goalkick') clearGoalKickBox(state, pending.taker);
     // A human is lining up a restart: hold here until they release it (or the
     // idle fallback fires). Aim + release are driven from the session.
     if (match.awaitRestart) {
