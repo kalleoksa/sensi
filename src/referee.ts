@@ -74,6 +74,24 @@ export function makeReferee(): Referee {
   };
 }
 
+// Put the ref back to his start-of-match state: mid-pitch, no card in hand.
+// Called by startMatch so a replay doesn't inherit a card from the last game.
+export function resetReferee(ref: Referee): void {
+  ref.x = CX + 40;
+  ref.y = (FIELD_T + FIELD_B) / 2;
+  ref.prevX = ref.x;
+  ref.prevY = ref.y;
+  ref.vx = ref.vy = 0;
+  ref.z = 0;
+  ref.vz = 0;
+  ref.dir = Dir.D;
+  ref.state = 'idle';
+  ref.stateTimer = 0;
+  ref.distance = 0;
+  ref.cardTimer = 0;
+  ref.cardColor = null;
+}
+
 // Plant the ref on the foul spot and start the card animation.
 export function brandishCard(ref: Referee, x: number, y: number, color: 'yellow' | 'red'): void {
   ref.x = clamp(x, FIELD_L + REF_MARGIN, FIELD_R - REF_MARGIN);

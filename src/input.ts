@@ -78,11 +78,13 @@ export function initInput(): void {
       }
     }
   });
-  // Drop held state if the tab loses focus (prevents stuck keys).
+  // Drop held state if the tab loses focus (prevents stuck keys). Pending action
+  // edges go too: a press that happened just before the tab lost focus must not
+  // come back as a kick or a tackle whenever the player returns.
   window.addEventListener('blur', () => {
     held.clear();
-    uiEdges.clear();
     for (const c of CHANNELS) c.actionDown = false;
+    clearActionEdges();
   });
 }
 
@@ -219,12 +221,19 @@ export function consumeMatchControls(): MatchControls {
   return c;
 }
 
-// Clear pending action edges + UI edges. Call when launching a match so the
-// keypress that confirmed the menu doesn't leak through as a first-frame kick.
-export function clearActionEdges(): void {
+// Drop pending gameplay action edges, leaving the UI edge set alone. Called
+// whenever the sim isn't consuming input (a paused match) so a press made while
+// play was frozen can't surface as a kick or a tackle on the resuming frame.
+export function clearGameplayEdges(): void {
   for (const c of CHANNELS) {
     c.pressedEdge = false;
     c.releasedEdge = false;
   }
+}
+
+// Clear pending action edges + UI edges. Call when launching a match so the
+// keypress that confirmed the menu doesn't leak through as a first-frame kick.
+export function clearActionEdges(): void {
+  clearGameplayEdges();
   uiEdges.clear();
 }

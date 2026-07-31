@@ -7,7 +7,7 @@
 
 import { dirFromVec, type Ball, type GameState, type Player } from './state';
 import { kickToward } from './player';
-import { brandishCard } from './referee';
+import { brandishCard, resetReferee } from './referee';
 import { emitSfx } from './audio';
 import { homeForSlot } from './team';
 import {
@@ -212,13 +212,60 @@ export function setupHalf(state: GameState, match: Match, half: 1 | 2, kickoffTe
   beginKickoff(state, match, kickoffTeam);
 }
 
+// Return one player to their start-of-match state: no cards, no locks, no
+// half-charged action, standing still. Position/home come from setupHalf.
+function resetPlayerForMatch(p: Player): void {
+  p.vx = 0;
+  p.vy = 0;
+  p.z = 0;
+  p.vz = 0;
+  p.state = 'idle';
+  p.stateTimer = 0;
+  p.distance = 0;
+  p.duty = p.role === 'gk' ? 'gk' : 'hold';
+  p.markTarget = null;
+  p.charging = false;
+  p.charge = 0;
+  p.bufferedTap = 0;
+  p.pokeTimer = 0;
+  p.slideCooldown = 0;
+  p.yellow = false;
+  p.sentOff = false; // back on the pitch for the new match
+}
+
 // Kick off a fresh match: 0-0, first half, team 1 takes the first kickoff.
+// This is the ONE canonical full reset — PLAY AGAIN and the R key route through
+// it, so a replay is indistinguishable from a brand-new session. Every mutable
+// field of the match, the players and the referee is returned to its initial
+// value here; anything added to those types needs a line in this function (or in
+// resetPlayerForMatch) or it will leak across a restart.
 export function startMatch(state: GameState, match: Match): void {
   match.score[0] = 0;
   match.score[1] = 0;
-  match.flash = 0;
+  match.phase = 'kickoff';
+  match.deadTimer = 0;
+  match.deadReset = false;
   match.restart = null;
+  match.awaitRestart = null;
+  match.flash = 0;
+  match.cardFlash = 0;
+  match.cardColor = null;
+  match.outBall = null;
+  match.outTimer = 0;
+  match.half = 1;
+  match.clock = match.halfLength;
   match.firstKickoffTeam = 1;
+
+  state.foul = null;
+  state.carrier = null;
+  state.controlled = null;
+  state.controlled2 = null;
+  state.teamSlideCd[0] = 0;
+  state.teamSlideCd[1] = 0;
+  state.suppressOffside = false;
+  for (const p of state.players) resetPlayerForMatch(p);
+  resetReferee(state.referee);
+
   setupHalf(state, match, 1, match.firstKickoffTeam);
 }
 

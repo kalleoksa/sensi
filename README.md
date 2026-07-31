@@ -17,9 +17,10 @@ npm run dev      # http://localhost:5173
 ```bash
 npm run build    # type-check + production build to dist/
 npm run preview  # serve the production build
+npm test         # run the test suite (vitest)
 ```
 
-The game runs at a base resolution of 320×256 game pixels, integer-scaled to
+The game runs at a base resolution of 384×320 game pixels, integer-scaled to
 your window with nearest-neighbour filtering for crisp pixels.
 
 ## Controls
@@ -104,7 +105,21 @@ src/
     palette.ts     colour constants
     pitch_gen.ts   baked pitch: grass, markings, goals, crowd, boards
     player_gen.ts  procedural player sprite atlas (+ palette swap)
+
+tests/
+  competition.test.ts  bracket / schedule invariants for cup, league, world cup
+  app-flow.test.ts     screen transitions driven through the real app shell
+  session.test.ts      the full-match reset contract, control-mode switching
+  input.test.ts        gameplay vs UI edges, pause and blur handling
+  save.test.ts         tournament persistence, malformed and unavailable storage
+  support/harness.ts   headless window / localStorage / canvas stand-ins
 ```
+
+The tests run in plain node against the real modules — no browser, no jsdom.
+`tests/support/harness.ts` provides the few globals the game touches (a window
+that records listeners so keyboard input can be synthesised, an in-memory
+localStorage, and a canvas context that swallows draw calls), which is enough to
+drive whole matches and whole competitions headlessly.
 
 ## Legal
 

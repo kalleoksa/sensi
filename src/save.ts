@@ -4,13 +4,22 @@
 // Competition holds TeamDef references and an Rng, neither of which is JSON, so
 // teams are stored by id and rehydrated on load, and the PRNG state is captured
 // so resumed auto-sims stay deterministic.
+//
+// Anything under a storage key we don't control byte-for-byte (an older build, a
+// half-written value, a hand-edited entry) has to be treated as untrusted input:
+// loading validates the whole shape rather than trusting a type assertion, and a
+// save that doesn't validate is dropped so the app boots into a clean menu
+// instead of throwing inside the animation loop.
 
 import { TEAMS, type TeamDef } from './teams/data';
 import { makeRng } from './rng';
+import { MATCH_LENGTHS, PITCHES } from './options';
 import type { Competition, CompetitionKind } from './competition';
 
 const KEY = 'sensi.tournament';
-const VERSION = 1;
+const VERSION = 2; // 2: added per-round byes
+
+const KINDS: CompetitionKind[] = ['league', 'cup', 'worldcup'];
 
 interface SavedFixture {
   a: string;
@@ -26,6 +35,7 @@ interface SavedTournament {
   kind: CompetitionKind;
   you: string;
   rounds: SavedFixture[][];
+  byes: string[][];
   roundIndex: number;
   done: boolean;
   champion: string | null;
@@ -36,7 +46,12 @@ interface SavedTournament {
   pitchIndex: number;
 }
 
-const byId = (): Map<string, TeamDef> => new Map(TEAMS.map((t) => [t.id, t]));
+const MAX_GOALS_SAVED = 99; // a stored scoreline above this is nonsense
+
+// TEAMS is a constant, so the id index is built once and reused (hasTournament
+// runs every frame the main menu is up).
+let idIndex: Map<string, TeamDef> | null = null;
+const byId = (): Map<string, TeamDef> => (idIndex ??= new Map(TEAMS.map((t) => [t.id, t])));
 
 export function saveTournament(comp: Competition, lengthIndex: number, pitchIndex: number): void {
   const id = (t: TeamDef | null): string | null => (t ? t.id : null);
@@ -47,6 +62,7 @@ export function saveTournament(comp: Competition, lengthIndex: number, pitchInde
     rounds: comp.rounds.map((r) =>
       r.map((f) => ({ a: f.a.id, b: f.b.id, sa: f.sa, sb: f.sb, played: f.played, winner: id(f.winner) })),
     ),
+    byes: comp.byes.map((r) => r.map((t) => t.id)),
     roundIndex: comp.roundIndex,
     done: comp.done,
     champion: id(comp.champion),
@@ -63,6 +79,74 @@ export function saveTournament(comp: Competition, lengthIndex: number, pitchInde
   }
 }
 
+// --- validation -------------------------------------------------------------
+// Every field of the parsed JSON is checked before it reaches the Competition,
+// so a malformed save can only ever mean "no save" — never a throw mid-frame.
+
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+const isBool = (v: unknown): v is boolean => typeof v === 'boolean';
+
+const isId = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
+
+const isIdOrNull = (v: unknown): v is string | null => v === null || isId(v);
+
+// A finite integer in [lo, hi].
+function isInt(v: unknown, lo: number, hi: number): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
+}
+
+function isIdArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every(isId);
+}
+
+function validFixture(v: unknown): v is SavedFixture {
+  if (!isObj(v)) return false;
+  return (
+    isId(v.a) &&
+    isId(v.b) &&
+    isInt(v.sa, 0, MAX_GOALS_SAVED) &&
+    isInt(v.sb, 0, MAX_GOALS_SAVED) &&
+    isBool(v.played) &&
+    isIdOrNull(v.winner)
+  );
+}
+
+// Shape-check the parsed value and clamp the option indices (which only pick a
+// label / physics preset, so a stale out-of-range index is worth salvaging).
+function validate(v: unknown): SavedTournament | null {
+  if (!isObj(v)) return null;
+  if (v.version !== VERSION) return null;
+  if (typeof v.kind !== 'string' || !KINDS.includes(v.kind as CompetitionKind)) return null;
+  if (!isId(v.you)) return null;
+  if (!Array.isArray(v.rounds) || !v.rounds.every((r) => Array.isArray(r) && r.every(validFixture))) return null;
+  if (!Array.isArray(v.byes) || !v.byes.every(isIdArray)) return null;
+  if (v.byes.length !== v.rounds.length) return null;
+  if (!isInt(v.roundIndex, 0, Math.max(0, v.rounds.length - 1))) return null;
+  if (!isBool(v.done) || !isBool(v.youOut)) return null;
+  if (!isIdOrNull(v.champion)) return null;
+  if (v.groups !== null && !(Array.isArray(v.groups) && v.groups.every(isIdArray))) return null;
+  if (typeof v.rngState !== 'number' || !Number.isFinite(v.rngState)) return null;
+  const clamp = (n: unknown, hi: number): number => (isInt(n, 0, hi) ? n : 0);
+  return {
+    version: VERSION,
+    kind: v.kind as CompetitionKind,
+    you: v.you,
+    rounds: v.rounds as SavedFixture[][],
+    byes: v.byes as string[][],
+    roundIndex: v.roundIndex,
+    done: v.done,
+    champion: v.champion,
+    youOut: v.youOut,
+    groups: v.groups as string[][] | null,
+    rngState: v.rngState >>> 0,
+    lengthIndex: clamp(v.lengthIndex, MATCH_LENGTHS.length - 1),
+    pitchIndex: clamp(v.pitchIndex, PITCHES.length - 1),
+  };
+}
+
+// Read + validate the stored save. Anything unreadable or malformed is removed
+// so a broken value can't keep offering a CONTINUE that never loads.
 function read(): SavedTournament | null {
   let raw: string | null;
   try {
@@ -71,18 +155,27 @@ function read(): SavedTournament | null {
     return null;
   }
   if (!raw) return null;
+  let parsed: unknown;
   try {
-    const d = JSON.parse(raw) as SavedTournament;
-    return d && d.version === VERSION ? d : null;
+    parsed = JSON.parse(raw);
   } catch {
+    clearTournament();
     return null;
   }
+  const d = validate(parsed);
+  if (!d) {
+    clearTournament();
+    return null;
+  }
+  return d;
 }
 
-// A resumable tournament exists (and isn't already finished).
+// A resumable tournament exists: readable, unfinished, and for a team still in
+// the roster. (Fixtures are only rehydrated by loadTournament — offering a
+// CONTINUE that then fails to load is handled there by dropping the save.)
 export function hasTournament(): boolean {
   const d = read();
-  return !!d && !d.done;
+  return !!d && !d.done && byId().has(d.you);
 }
 
 export function clearTournament(): void {
@@ -114,16 +207,27 @@ export function loadTournament(): { comp: Competition; lengthIndex: number; pitc
     }
     rounds.push(round);
   }
+  const teamList = (ids: string[]): TeamDef[] | null => {
+    const out: TeamDef[] = [];
+    for (const tid of ids) {
+      const t = team(tid);
+      if (!t) return null;
+      out.push(t);
+    }
+    return out;
+  };
+  const byes: TeamDef[][] = [];
+  for (const b of d.byes) {
+    const list = teamList(b);
+    if (!list) return null;
+    byes.push(list);
+  }
   let groups: TeamDef[][] | null = null;
   if (d.groups) {
     groups = [];
     for (const g of d.groups) {
-      const grp: TeamDef[] = [];
-      for (const tid of g) {
-        const t = team(tid);
-        if (!t) return null;
-        grp.push(t);
-      }
+      const grp = teamList(g);
+      if (!grp) return null;
       groups.push(grp);
     }
   }
@@ -139,6 +243,7 @@ export function loadTournament(): { comp: Competition; lengthIndex: number; pitc
     champion: d.champion ? team(d.champion) ?? null : null,
     youOut: d.youOut,
     groups,
+    byes,
     rng,
   };
   return { comp, lengthIndex: d.lengthIndex, pitchIndex: d.pitchIndex };

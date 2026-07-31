@@ -13,6 +13,7 @@ import {
   makeSession,
   stepSession,
   restartSession,
+  setControlMode,
   type Session,
   type ControlMode,
 } from './session';
@@ -124,12 +125,27 @@ export interface App {
   draw: (alpha: number) => void;
 }
 
+// Inspection handle hung off `window.__sensiDev` for debugging in the browser
+// console; the headless flow tests drive the app through it too.
+export interface SensiDev {
+  session: () => Session | null;
+  competition: () => Competition | null;
+  screen: () => AppScreen;
+  quickMatch: (pitchIndex?: number) => void;
+  quickComp: (kind: CompetitionKind) => void;
+  step: (n?: number) => void;
+}
+
 export function makeApp(deps: AppDeps): App {
   const { ctx, renderMatch } = deps;
 
   let screen: AppScreen = 'title';
   let frames = 0; // for the title blink
   let session: Session | null = null;
+  // What the live session is FOR. Full time routes on this rather than on
+  // "is there a competition object", so quitting a competition match and then
+  // playing a Friendly can't post the friendly's score into the competition.
+  let sessionKind: 'friendly' | 'competition' = 'friendly';
   let pendingMode: ControlMode = '1p';
 
   // Match setup carried across the friendly screens.
@@ -146,6 +162,9 @@ export function makeApp(deps: AppDeps): App {
   let tsPurpose: 'friendly' | 'competition' = 'friendly';
   let pendingComp: CompetitionKind = 'league';
   let competition: Competition | null = null;
+  // Origin of the match about to be launched; copied into sessionKind by
+  // launchMatch (the setup screens sit between the two).
+  let pendingSessionKind: 'friendly' | 'competition' = 'friendly';
 
   const mainMenu = makeList(MAIN_ITEMS, MAIN_ENABLED);
   const friendly = makeList(FRIENDLY_ITEMS);
@@ -162,14 +181,16 @@ export function makeApp(deps: AppDeps): App {
 
   // Dev handles for inspection/testing (mirrors the old __game/__match hooks).
   (window as unknown as { __sensi?: () => Session | null }).__sensi = () => session;
-  (window as unknown as { __sensiDev?: unknown }).__sensiDev = {
+  const dev: SensiDev = {
     session: () => session,
     competition: () => competition,
+    screen: () => screen,
     quickMatch: (pitchIndex?: number) => {
       if (typeof pitchIndex === 'number') options.pitchIndex = pitchIndex;
       ts.home = TEAMS[0];
       awayTeam = TEAMS[8];
       pendingMode = 'cpu';
+      pendingSessionKind = 'friendly';
       launchMatch();
     },
     quickComp: (kind: CompetitionKind) => {
@@ -187,6 +208,7 @@ export function makeApp(deps: AppDeps): App {
       session.paused = wasPaused;
     },
   };
+  (window as unknown as { __sensiDev?: SensiDev }).__sensiDev = dev;
 
   const sideFormation = (side: 0 | 1): FormationId => (side === 0 ? homeFormation : awayFormation);
 
@@ -197,6 +219,7 @@ export function makeApp(deps: AppDeps): App {
 
   function enterTeamSelect(): void {
     tsPurpose = 'friendly';
+    pendingSessionKind = 'friendly';
     ts.picking = 'home';
     ts.level = 'continent';
     ts.home = null;
@@ -236,6 +259,7 @@ export function makeApp(deps: AppDeps): App {
     ts.home = competition.you; // the player always controls the home slot (team 0)
     awayTeam = opp;
     pendingMode = '1p';
+    pendingSessionKind = 'competition';
     beginPreMatch();
   }
 
@@ -266,6 +290,7 @@ export function makeApp(deps: AppDeps): App {
       halfLength: MATCH_LENGTHS[options.lengthIndex].half,
       pitch: PITCHES[options.pitchIndex],
     });
+    sessionKind = pendingSessionKind;
     clearActionEdges(); // don't let the confirming keypress leak in as a kick
     fullTimeTimer = 0;
     showControls = false;
@@ -290,12 +315,21 @@ export function makeApp(deps: AppDeps): App {
     if (want === has) return;
     mainMenu.items = want ? ['CONTINUE', ...MAIN_ITEMS] : [...MAIN_ITEMS];
     mainMenu.enabled = want ? [true, ...MAIN_ENABLED] : [...MAIN_ENABLED];
-    mainMenu.cursor = Math.min(mainMenu.cursor, mainMenu.items.length - 1);
+    // Keep the highlight on the row it was already on: adding or dropping the
+    // CONTINUE row shifts every other item by one, and the selection must not
+    // slide onto a different entry under the player.
+    const shifted = mainMenu.cursor + (want ? 1 : -1);
+    mainMenu.cursor = Math.max(0, Math.min(shifted, mainMenu.items.length - 1));
   }
 
   function continueTournament(): void {
     const saved = loadTournament();
-    if (!saved) return;
+    if (!saved) {
+      // Readable but no longer rehydratable (a team it referenced has left the
+      // roster): drop it so CONTINUE stops offering a run that can't resume.
+      clearTournament();
+      return;
+    }
     competition = saved.comp;
     options.lengthIndex = saved.lengthIndex;
     options.pitchIndex = saved.pitchIndex;
@@ -474,6 +508,19 @@ export function makeApp(deps: AppDeps): App {
     emitSfx('uiSelect');
   }
 
+  // Drop the live session and, with it, the in-memory competition run it may
+  // have belonged to. A tournament that has been saved is untouched on disk and
+  // comes back through CONTINUE; what goes away is the dangling reference that
+  // would otherwise still be sitting there when the next match ends.
+  function abandonSession(): void {
+    session = null;
+    sessionKind = 'friendly';
+    competition = null;
+    showControls = false;
+    fullTimeTimer = 0;
+    clearActionEdges();
+  }
+
   function updateMatch(dt: number): void {
     if (!session) return;
     const c = consumeMatchControls();
@@ -483,7 +530,7 @@ export function makeApp(deps: AppDeps): App {
     if (session.match.phase === 'fulltime') {
       fullTimeTimer += dt;
       if (c.exit || fullTimeTimer >= FULLTIME_HOLD) {
-        if (competition) enterCompResults();
+        if (sessionKind === 'competition' && competition) enterCompResults();
         else enterPostMatch();
       } else {
         stepSession(session, dt); // keeps the ball settling + crowd alive
@@ -492,7 +539,10 @@ export function makeApp(deps: AppDeps): App {
     }
 
     if (c.exit) {
-      session = null;
+      // Abandon the match. A competition match quit part-way is dropped whole:
+      // the tournament stays saved (CONTINUE picks it back up at the hub) but the
+      // in-memory run is detached so nothing else can post a result into it.
+      abandonSession();
       screen = 'mainMenu';
       emitSfx('uiSelect');
       return;
@@ -500,15 +550,22 @@ export function makeApp(deps: AppDeps): App {
     if (c.controls) {
       showControls = !showControls;
       session.paused = showControls; // viewing controls pauses the match
+      clearActionEdges();
     }
     if (c.pause) {
       session.paused = !session.paused;
       if (!session.paused) showControls = false;
+      // Don't let an action press made across the pause boundary fire as a kick
+      // or tackle on the first frame back.
+      clearActionEdges();
     }
-    if (c.restart) restartSession(session);
+    if (c.restart) {
+      restartSession(session);
+      clearActionEdges();
+      fullTimeTimer = 0;
+    }
     if (c.toggleTwoPlayer && session.config.controlMode !== 'cpu') {
-      session.config.controlMode = session.config.controlMode === '2p' ? '1p' : '2p';
-      session.state.controlled2 = null;
+      setControlMode(session, session.config.controlMode === '2p' ? '1p' : '2p');
     }
     stepSession(session, dt);
   }
@@ -529,14 +586,14 @@ export function makeApp(deps: AppDeps): App {
         fullTimeTimer = 0;
         screen = 'match';
       } else {
-        session = null;
+        abandonSession();
         screen = 'mainMenu';
       }
       return;
     }
     if (m.back) {
       emitSfx('uiSelect');
-      session = null;
+      abandonSession();
       screen = 'mainMenu';
     }
   }
@@ -564,13 +621,20 @@ export function makeApp(deps: AppDeps): App {
     const m = consumeMenuInput();
     if (m.confirm) {
       emitSfx('uiSelect');
-      playCompMatch();
+      if (yourFixture(competition)) {
+        playCompMatch();
+      } else {
+        // No fixture for the player this round (a knockout bye): sim the round
+        // and go straight to the results rather than sitting here with nothing
+        // to press.
+        simRound(competition);
+        screen = 'compResults';
+      }
       return;
     }
     if (m.back) {
       emitSfx('uiSelect');
-      competition = null;
-      session = null;
+      abandonSession();
       screen = 'mainMenu';
     }
   }
@@ -585,6 +649,7 @@ export function makeApp(deps: AppDeps): App {
       emitSfx('uiSelect');
       advance(competition);
       session = null; // finished match no longer needed
+      sessionKind = 'friendly';
       // Auto-save the new state between matches (cleared once the run is over).
       if (competition.done) clearTournament();
       else saveTournament(competition, options.lengthIndex, options.pitchIndex);
@@ -597,8 +662,7 @@ export function makeApp(deps: AppDeps): App {
     if (m.confirm || m.back) {
       emitSfx('uiSelect');
       clearTournament();
-      competition = null;
-      session = null;
+      abandonSession();
       screen = 'mainMenu';
     }
   }
@@ -839,8 +903,10 @@ export function makeApp(deps: AppDeps): App {
     if (f) {
       const opp = f.a === competition.you ? f.b : f.a;
       drawTextCentered(ctx, `NEXT: ${competition.you.short} V ${opp.short}`, 0, VIEW_W, VIEW_H - 28, DEFAULT_STYLE.hi, 1);
+    } else {
+      drawTextCentered(ctx, `${competition.you.short} HAVE A BYE`, 0, VIEW_W, VIEW_H - 28, DEFAULT_STYLE.hi, 1);
     }
-    drawTextCentered(ctx, 'SPACE PLAY   ESC QUIT', 0, VIEW_W, VIEW_H - 14, SUBTLE, 1);
+    drawTextCentered(ctx, f ? 'SPACE PLAY   ESC QUIT' : 'SPACE CONTINUE   ESC QUIT', 0, VIEW_W, VIEW_H - 14, SUBTLE, 1);
   }
 
   function drawCompResults(): void {

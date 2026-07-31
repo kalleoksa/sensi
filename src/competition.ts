@@ -8,7 +8,9 @@
 //           played is champion.
 //   Cup:    single-elimination bracket; drawn ties are settled on penalties (a
 //           coin-flip here). Win the final to be champion; lose any tie and your
-//           run is over.
+//           run is over. A field that isn't a power of two hands out byes (never
+//           to the player) so the bracket normalizes in the opening round and
+//           every round after it halves cleanly — see pairRound.
 
 import { GROUPS, type TeamDef } from './teams/data';
 import { makeRng, type Rng } from './rng';
@@ -19,6 +21,8 @@ const WC_GROUP_ROUNDS = 3; // matchdays in a 4-team group round-robin
 
 // A single match. `a` and `b` are the two teams; for the player's own fixture we
 // always orient `a` = you. winner is set when resolved (cup; or league for info).
+// Both teams are always defined — a knockout field that doesn't pair off exactly
+// hands out byes instead of half-filling a fixture (see pairRound).
 export interface Fixture {
   a: TeamDef;
   b: TeamDef;
@@ -48,6 +52,10 @@ export interface Competition {
   champion: TeamDef | null; // set when finished (null if you were knocked out)
   youOut: boolean; // cup: eliminated before the final
   groups: TeamDef[][] | null; // worldcup: the 12 groups of 4; null otherwise
+  // Knockout byes, parallel to `rounds`: byes[r] are the teams that sat out
+  // round r and walk straight into round r+1. Empty for every league round and
+  // for any round whose field is even.
+  byes: TeamDef[][];
   rng: Rng;
 }
 
@@ -64,6 +72,38 @@ function shuffle<T>(arr: T[], rng: Rng): T[] {
 
 function fixture(a: TeamDef, b: TeamDef): Fixture {
   return { a, b, sa: 0, sb: 0, played: false, winner: null };
+}
+
+// Largest power of two strictly below n. The size the next knockout round should
+// have, so a field that isn't a power of two normalizes in one go.
+function halfPowerOfTwo(n: number): number {
+  let p = 1;
+  while (p * 2 < n) p *= 2;
+  return p;
+}
+
+// Pair a knockout field into ties, handing out byes when the field isn't twice a
+// power of two (52 teams => 20 ties + 12 byes => a 32-team round two, and every
+// round after that halves exactly). Byes are drawn at random from everyone but
+// the player, so the player always has a match — and every fixture returned has
+// two defined teams, which the rest of the app (bracket drawing, simulation,
+// saving) relies on.
+function pairRound(field: TeamDef[], you: TeamDef, rng: Rng): { ties: Fixture[]; byes: TeamDef[] } {
+  if (field.length < 2) return { ties: [], byes: [...field] };
+  const byeCount = 2 * halfPowerOfTwo(field.length) - field.length;
+  const byes: TeamDef[] = [];
+  let playing = field;
+  if (byeCount > 0) {
+    for (const t of shuffle(field, rng)) {
+      if (byes.length >= byeCount) break;
+      if (t.id !== you.id) byes.push(t);
+    }
+    const byeIds = new Set(byes.map((t) => t.id));
+    playing = field.filter((t) => !byeIds.has(t.id)); // keeps the bracket order
+  }
+  const ties: Fixture[] = [];
+  for (let i = 0; i + 1 < playing.length; i += 2) ties.push(fixture(playing[i], playing[i + 1]));
+  return { ties, byes };
 }
 
 // Round-robin via the circle method: each team meets every other once.
@@ -89,6 +129,7 @@ function leagueSchedule(teams: TeamDef[]): Fixture[][] {
 export function makeCompetition(kind: CompetitionKind, teams: TeamDef[], you: TeamDef, seed: number): Competition {
   const rng = makeRng(seed);
   let rounds: Fixture[][];
+  let byes: TeamDef[][] | null = null; // set by the cup branch; no byes elsewhere
   let groups: TeamDef[][] | null = null;
   if (kind === 'league') {
     rounds = leagueSchedule(shuffle(teams, rng));
@@ -102,12 +143,22 @@ export function makeCompetition(kind: CompetitionKind, teams: TeamDef[], you: Te
     for (let r = 0; r < WC_GROUP_ROUNDS; r++) rounds.push(perGroup.flatMap((gr) => gr[r]));
   } else {
     // Cup: pair the shuffled field into the first round; later rounds fill in.
-    const field = shuffle(teams, rng);
-    const first: Fixture[] = [];
-    for (let i = 0; i < field.length; i += 2) first.push(fixture(field[i], field[i + 1]));
-    rounds = [first];
+    const first = pairRound(shuffle(teams, rng), you, rng);
+    rounds = [first.ties];
+    byes = [first.byes];
   }
-  return { kind, you, rounds, roundIndex: 0, done: false, champion: null, youOut: false, groups, rng };
+  return {
+    kind,
+    you,
+    rounds,
+    roundIndex: 0,
+    done: false,
+    champion: null,
+    youOut: false,
+    groups,
+    byes: byes ?? rounds.map(() => []), // league / WC group stage: no byes
+    rng,
+  };
 }
 
 // The player's fixture in the current round, or null if they have no match
@@ -218,6 +269,7 @@ export function advance(comp: Competition): void {
       // Groups done: seed the Round of 32 from the standings and play on.
       const r32 = buildKnockout(comp);
       comp.rounds.push(r32);
+      comp.byes.push([]);
       if (!r32.some((f) => f.a.id === comp.you.id || f.b.id === comp.you.id)) {
         comp.done = true; // didn't qualify
         comp.youOut = true;
@@ -225,40 +277,37 @@ export function advance(comp: Competition): void {
       return;
     }
     // Knockout: build the next round from the winners of the one just completed.
-    const prev = comp.rounds[comp.roundIndex - 1] ?? [];
-    const winners = prev.map((f) => f.winner).filter((w): w is TeamDef => !!w);
-    if (winners.length <= 1) {
-      comp.done = true;
-      comp.champion = winners[0] ?? null;
-      if (!comp.champion || comp.champion.id !== comp.you.id) comp.youOut = true;
-      return;
-    }
-    const next: Fixture[] = [];
-    for (let i = 0; i < winners.length; i += 2) next.push(fixture(winners[i], winners[i + 1]));
-    comp.rounds.push(next);
-    if (!next.some((f) => f.a.id === comp.you.id || f.b.id === comp.you.id)) {
-      comp.done = true;
-      comp.youOut = true;
-    }
+    buildNextKnockoutRound(comp, comp.roundIndex - 1);
     return;
   }
   // Cup: gather winners; either crown a champion or build the next round.
-  const winners = comp.rounds[comp.roundIndex].map((f) => f.winner!).filter(Boolean);
-  if (winners.length <= 1) {
+  if (buildNextKnockoutRound(comp, comp.roundIndex)) comp.roundIndex++;
+}
+
+// Advance a knockout bracket: take the winners of round `from` plus that round's
+// byes, then either crown a champion or pair the survivors into a new round.
+// Shared by the Cup and the World Cup knockout stage so both get the same bye
+// handling and the same two-defined-teams-per-fixture guarantee. Returns true
+// when a new round was pushed (false once the bracket is decided).
+function buildNextKnockoutRound(comp: Competition, from: number): boolean {
+  const round = comp.rounds[from] ?? [];
+  const winners = round.map((f) => f.winner).filter((w): w is TeamDef => !!w);
+  const field = [...winners, ...(comp.byes[from] ?? [])];
+  if (field.length <= 1) {
     comp.done = true;
-    comp.champion = winners[0] ?? null;
-    if (comp.champion !== comp.you) comp.youOut = true;
-    return;
+    comp.champion = field[0] ?? null;
+    if (!comp.champion || comp.champion.id !== comp.you.id) comp.youOut = true;
+    return false;
   }
-  const next: Fixture[] = [];
-  for (let i = 0; i < winners.length; i += 2) next.push(fixture(winners[i], winners[i + 1]));
-  comp.rounds.push(next);
-  comp.roundIndex++;
-  if (!next.some((f) => f.a === comp.you || f.b === comp.you)) {
+  const { ties, byes } = pairRound(field, comp.you, comp.rng);
+  comp.rounds.push(ties);
+  comp.byes.push(byes);
+  if (!ties.some((f) => f.a.id === comp.you.id || f.b.id === comp.you.id)) {
     // The player lost their tie — their run ends here.
     comp.done = true;
     comp.youOut = true;
   }
+  return true;
 }
 
 // Human-readable name for the current cup round (by number of teams left).

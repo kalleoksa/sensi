@@ -64,18 +64,38 @@ const lastPlayed: Partial<Record<SfxName, number>> = {};
 
 // --- setup ------------------------------------------------------------------
 
+// localStorage isn't always reachable: privacy modes and sandboxed/embedded
+// contexts throw SecurityError on plain access, and a full quota throws on write.
+// Audio preferences are a nicety, so both directions fall back silently to the
+// in-memory defaults rather than taking the whole boot down with them.
+function readPref(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writePref(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // preference won't persist this session — not worth failing over.
+  }
+}
+
 // Wire gesture + mute listeners. The context itself is created lazily on the
 // first user gesture (browsers block audio until then; this also unlocks iOS).
 export function initAudio(): void {
   // Guard against an absent key: Number(null) is 0, which would otherwise pass
   // the 0..1 check and silence audio for every first-time visitor.
-  const storedRaw = localStorage.getItem(VOLUME_KEY);
+  const storedRaw = readPref(VOLUME_KEY);
   if (storedRaw !== null) {
     const stored = Number(storedRaw);
     if (stored >= 0 && stored <= 1) volume = stored;
   }
-  muted = localStorage.getItem(MUTE_KEY) === '1';
-  musicEnabled = localStorage.getItem(MUSIC_KEY) !== '0';
+  muted = readPref(MUTE_KEY) === '1';
+  musicEnabled = readPref(MUSIC_KEY) !== '0';
 
   const unlock = (): void => {
     ensureContext();
@@ -152,20 +172,20 @@ function ensureContext(): AudioContext | null {
 
 export function setMuted(m: boolean): void {
   muted = m;
-  localStorage.setItem(MUTE_KEY, m ? '1' : '0');
+  writePref(MUTE_KEY, m ? '1' : '0');
   if (ctx && master) master.gain.setTargetAtTime(m ? 0 : volume, ctx.currentTime, 0.02);
   updateBadge();
 }
 
 export function setVolume(v: number): void {
   volume = Math.max(0, Math.min(1, v));
-  localStorage.setItem(VOLUME_KEY, String(volume));
+  writePref(VOLUME_KEY, String(volume));
   if (ctx && master && !muted) master.gain.setTargetAtTime(volume, ctx.currentTime, 0.02);
 }
 
 export function setMusicEnabled(on: boolean): void {
   musicEnabled = on;
-  localStorage.setItem(MUSIC_KEY, on ? '1' : '0');
+  writePref(MUSIC_KEY, on ? '1' : '0');
   updateBadge();
 }
 
