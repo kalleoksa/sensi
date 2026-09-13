@@ -774,7 +774,7 @@ function holdAi(state: GameState, p: Player, dt: number): void {
 }
 
 const GK_HOLD = 0.45; // seconds a keeper holds a catch before distributing
-const GK_THROW_SPEED = 300;
+const GK_THROW_SPEED = 245; // an outlet throw, not a shot
 
 // Distribute a gathered ball: a real outlet, not the old blind punt at the
 // centre circle — which served the ball straight back to the opposing
@@ -799,7 +799,7 @@ function gkDistribute(state: GameState, p: Player): void {
     }
   }
   if (best) {
-    kickToward(state, p, best.x, best.y, GK_THROW_SPEED, 80);
+    kickToward(state, p, best.x, best.y, GK_THROW_SPEED, 55);
     return;
   }
   // Nothing safe on: hoof it long up the LESS CROWDED flank — never the middle.
@@ -807,7 +807,7 @@ function gkDistribute(state: GameState, p: Player): void {
   const lx = FIELD_L + 50;
   const rx = FIELD_R - 50;
   const tx = nearestEnemyDist(state, lx, upY, p.team) >= nearestEnemyDist(state, rx, upY, p.team) ? lx : rx;
-  kickToward(state, p, tx, upY, 340, 120);
+  kickToward(state, p, tx, upY, 315, 110);
 }
 
 export function gkAi(state: GameState, p: Player, dt: number): void {
@@ -822,8 +822,9 @@ export function gkAi(state: GameState, p: Player, dt: number): void {
   }
 
   // Gathered the ball (caught a dive too): hold it a beat like a real keeper,
-  // then distribute properly. (Human teams never reach this branch — the
-  // session hands their keeper's ball to the player to aim, SWOS-style.)
+  // then distribute properly. (A human team's keeper only reaches this branch
+  // for a back-pass — otherwise the session hands his ball to the player to
+  // aim, SWOS-style.)
   if (state.carrier === p) {
     p.z = 0;
     // Back-pass rule (#8): a ball a teammate deliberately kicked or threw to the

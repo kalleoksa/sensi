@@ -189,8 +189,12 @@ export function stepSession(s: Session, dt: number): void {
     // A human team's keeper who has gathered the ball distributes it BY HAND
     // (SWOS-style): the same aim-and-charge set piece as a goal kick — stick
     // aims, hold action for power — instead of an auto-punt to nowhere.
+    // A back-pass (a teammate's deliberate kick) may not be picked up, so it is
+    // left to the keeper AI, which clears it by foot.
     const kc = state.carrier;
-    if (kc && kc.role === 'gk' && match.humanTeams[kc.team]) {
+    const lk = state.ball.lastKick;
+    const backPass = kc !== null && lk !== null && lk.team === kc.team && lk !== kc;
+    if (kc && kc.role === 'gk' && match.humanTeams[kc.team] && !backPass) {
       const b = state.ball;
       b.x = kc.x;
       b.y = kc.y;
