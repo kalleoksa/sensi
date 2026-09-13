@@ -4,7 +4,7 @@
 // the current screen. The match itself is unchanged — it just no longer boots
 // at module load; a session is created on demand when a Friendly launches.
 
-import { VIEW_W, VIEW_H, FIELD_T, FIELD_B, CX, GOAL_W } from './world';
+import { VIEW_W, VIEW_H, FIELD_T, FIELD_B, CX, GOAL_W, WORLD_W, WORLD_H } from './world';
 import { drawText, drawTextCentered, measure } from './sprites/font';
 import { makeList, listMove, drawList, DEFAULT_STYLE, type ListStyle, type ListView } from './menu';
 import { consumeMenuInput, consumeMatchControls, clearActionEdges } from './input';
@@ -18,6 +18,7 @@ import {
   type ControlMode,
 } from './session';
 import { makeShootout, stepShootout } from './shootout';
+import { REPLAY_STATES, type ReplayFrame } from './session';
 import { CONTINENTS, TEAMS, teamsIn, type TeamDef, type Kit } from './teams/data';
 import {
   FORMATION_IDS,
@@ -182,6 +183,79 @@ export function makeApp(deps: AppDeps): App {
   const postMatch = makeList(POSTMATCH_ITEMS);
   let fullTimeTimer = 0; // counts the FULL TIME hold before the result screen
 
+  // Post-goal action replay: the recorded open-play frames are played back at
+  // half speed over the frozen celebration, then live positions are restored.
+  interface SavedPose {
+    x: number; y: number; z: number; prevX: number; prevY: number;
+    dir: number; state: string; distance: number;
+  }
+  let replay: {
+    pos: number; // fractional frame cursor into session.history
+    saved: SavedPose[];
+    ball: { x: number; y: number; z: number; prevX: number; prevY: number; prevZ: number };
+  } | null = null;
+  let replayShown = false; // one replay per goal (reset when the flash ends)
+
+  function startReplay(): void {
+    if (!session) return;
+    const st = session.state;
+    replay = {
+      pos: 0,
+      saved: st.players.map((p) => ({
+        x: p.x, y: p.y, z: p.z, prevX: p.prevX, prevY: p.prevY,
+        dir: p.dir, state: p.state, distance: p.distance,
+      })),
+      ball: {
+        x: st.ball.x, y: st.ball.y, z: st.ball.z,
+        prevX: st.ball.prevX, prevY: st.ball.prevY, prevZ: st.ball.prevZ,
+      },
+    };
+    replayShown = true;
+    emitSfx('whistleOut');
+  }
+
+  function applyReplayFrame(f: ReplayFrame, g: ReplayFrame, frac: number): void {
+    if (!session) return;
+    const st = session.state;
+    const lerp = (a: number, b: number): number => a + (b - a) * frac;
+    st.players.forEach((p, i) => {
+      const a = f.p[i];
+      const b = g.p[i];
+      if (!a || !b) return;
+      p.prevX = p.x;
+      p.prevY = p.y;
+      p.x = lerp(a[0], b[0]);
+      p.y = lerp(a[1], b[1]);
+      p.z = lerp(a[2], b[2]);
+      p.dir = a[3] as typeof p.dir;
+      p.state = REPLAY_STATES[a[4]] ?? 'idle';
+      p.distance = lerp(a[5], b[5]);
+    });
+    const bl = st.ball;
+    bl.prevX = bl.x;
+    bl.prevY = bl.y;
+    bl.prevZ = bl.z;
+    bl.x = lerp(f.b[0], g.b[0]);
+    bl.y = lerp(f.b[1], g.b[1]);
+    bl.z = lerp(f.b[2], g.b[2]);
+  }
+
+  function endReplay(): void {
+    if (!session || !replay) return;
+    const st = session.state;
+    st.players.forEach((p, i) => {
+      const sp = replay!.saved[i];
+      p.x = sp.x; p.y = sp.y; p.z = sp.z; p.prevX = sp.prevX; p.prevY = sp.prevY;
+      p.dir = sp.dir as typeof p.dir;
+      p.state = sp.state as typeof p.state;
+      p.distance = sp.distance;
+    });
+    const bl = st.ball;
+    const sb = replay.ball;
+    bl.x = sb.x; bl.y = sb.y; bl.z = sb.z; bl.prevX = sb.prevX; bl.prevY = sb.prevY; bl.prevZ = sb.prevZ;
+    replay = null;
+  }
+
   // Dev handles for inspection/testing (mirrors the old __game/__match hooks).
   (window as unknown as { __sensi?: () => Session | null }).__sensi = () => session;
   const dev: SensiDev = {
@@ -212,6 +286,17 @@ export function makeApp(deps: AppDeps): App {
     },
   };
   (window as unknown as { __sensiDev?: SensiDev }).__sensiDev = dev;
+
+  // Smoothly follow a point with the session camera (used by the replay).
+  function updateCameraTo(x: number, y: number, dt: number): void {
+    if (!session) return;
+    const cam = session.state.camera;
+    const k = 1 - Math.exp(-8 * dt);
+    cam.x += (x - VIEW_W / 2 - cam.x) * k;
+    cam.y += (y - VIEW_H / 2 - cam.y) * k;
+    cam.x = Math.max(0, Math.min(cam.x, WORLD_W - VIEW_W));
+    cam.y = Math.max(0, Math.min(cam.y, WORLD_H - VIEW_H));
+  }
 
   const sideFormation = (side: 0 | 1): FormationId => (side === 0 ? homeFormation : awayFormation);
 
@@ -530,6 +615,24 @@ export function makeApp(deps: AppDeps): App {
 
   function updateMatch(dt: number): void {
     if (!session) return;
+
+    // Action replay: the sim is frozen while the recording plays at half speed.
+    // Any confirm/back press (KICK on touch) skips it.
+    if (replay) {
+      const m = consumeMenuInput();
+      const H = session.history;
+      replay.pos += dt * 30; // half of the 60Hz recording rate
+      const k = Math.floor(replay.pos);
+      if (m.confirm || m.back || k >= H.length - 1) {
+        endReplay();
+        return;
+      }
+      applyReplayFrame(H[k], H[k + 1], replay.pos - k);
+      const b = session.state.ball;
+      updateCameraTo(b.x, b.y, dt);
+      return;
+    }
+
     const c = consumeMatchControls();
 
     // Full time: hold the FULL TIME overlay for a beat (Esc skips), then show
@@ -603,6 +706,13 @@ export function makeApp(deps: AppDeps): App {
       setControlMode(session, session.config.controlMode === '2p' ? '1p' : '2p');
     }
     stepSession(session, dt);
+
+    // A goal just went in (flash freshly lit): show the replay once, if there's
+    // enough recorded play to be worth watching.
+    if (session.match.flash > 0 && !replayShown && session.history.length > 75) {
+      startReplay();
+    }
+    if (session.match.flash <= 0) replayShown = false;
   }
 
   function updatePostMatch(): void {
@@ -1037,6 +1147,15 @@ export function makeApp(deps: AppDeps): App {
     const distToGoal = Math.min(Math.abs(b.y - FIELD_T), Math.abs(b.y - FIELD_B));
     const near = Math.max(0, 1 - distToGoal / 180);
     setCrowdIntensity(Math.max(near, session.match.flash > 0 ? 1 : 0));
+    // Blinking REPLAY banner over the action replay.
+    if (replay && frames % 40 < 26) {
+      const rw = measure('REPLAY', 2);
+      const rx = Math.round((VIEW_W - rw) / 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(rx - 4, VIEW_H - 34, rw + 8, 18);
+      drawText(ctx, 'REPLAY', rx, VIEW_H - 31, 'rgb(250,230,90)', 2);
+    }
+
     // Penalty shootout HUD: running score, result banners, and the human
     // taker's aim marker in the goal mouth + power bar over the kicker.
     const so = session.shootout;
