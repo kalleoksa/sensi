@@ -3,7 +3,7 @@
 // screen state machine (title -> menus -> match) and creates a match session on
 // demand; the fixed-step loop just drives app.update / app.draw.
 
-import { VIEW_W, VIEW_H, WORLD_W, WORLD_H, setViewSize } from './world';
+import { VIEW_W, VIEW_H, setViewSize } from './world';
 import { startLoop } from './loop';
 import { initInput } from './input';
 import { initTouch, isTouchDevice } from './touch';
@@ -21,13 +21,15 @@ ctx.imageSmoothingEnabled = false;
 
 // Desktop keeps crisp pixel-perfect integer scaling of the fixed 384x320 view.
 // Touch devices cover the whole display, with two sizings:
-//  - MATCH: a zoomed camera — the largest screen-shaped window that fits
-//    INSIDE the pitch world, so nothing outside the stadium ever shows and
-//    the players render big (iPhone landscape ~448x207, portrait ~248x536).
+//  - MATCH: a zoomed camera — the screen aspect fitted inside the
+//    MATCH_MAX_W x MATCH_MAX_H zoom box (itself inside the world), so the
+//    camera scrolls, players render big, and nothing beyond the stadium shows.
 //  - MENUS: landscape keeps the 320px logical height the screens are laid
 //    out for and widens; portrait keeps the 384px width and lengthens.
 // The app flips the mode via setMatchView when a match is on screen.
 const touchDevice = isTouchDevice();
+const MATCH_MAX_W = 400; // mobile match zoom box (both under the world's
+const MATCH_MAX_H = 448; // 448x536, so nothing outside the stadium ever shows)
 let matchView = false;
 export function setMatchView(on: boolean): void {
   if (matchView === on) return;
@@ -41,13 +43,16 @@ function fitToWindow(): void {
     let w: number;
     let h: number;
     if (matchView) {
+      // Zoom box: the screen aspect fitted inside MATCH_MAX_W x MATCH_MAX_H —
+      // tighter than the world, so the camera scrolls and players render big
+      // (iPhone landscape ~400x185 at ~2.1x, portrait ~207x448 at ~1.9x).
       const a = vw / vh;
-      if (a >= WORLD_W / WORLD_H) {
-        w = WORLD_W;
-        h = Math.round(WORLD_W / a);
+      if (a >= MATCH_MAX_W / MATCH_MAX_H) {
+        w = MATCH_MAX_W;
+        h = Math.round(MATCH_MAX_W / a);
       } else {
-        h = WORLD_H;
-        w = Math.round(WORLD_H * a);
+        h = MATCH_MAX_H;
+        w = Math.round(MATCH_MAX_H * a);
       }
     } else if (vw >= vh) {
       h = 320;
