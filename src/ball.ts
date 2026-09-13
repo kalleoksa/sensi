@@ -45,6 +45,7 @@ export function makeBall(x: number, y: number): Ball {
     vz: 0,
     spin: 0,
     owner: null,
+    lastKick: null,
     aftertouch: 0,
     controlLock: 0,
   };

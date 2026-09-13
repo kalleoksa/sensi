@@ -781,7 +781,15 @@ function gkAi(state: GameState, p: Player, dt: number): void {
   // Cleared the ball if it ended up at the keeper's feet (caught a dive too).
   if (state.carrier === p) {
     p.z = 0;
-    kickToward(state, p, CX + (b.x < CX ? 40 : -40), MID_Y, 300, 90);
+    // Back-pass rule: a ball a teammate deliberately kicked (or threw) to the
+    // keeper may not be picked up — it has to be played by foot, so it goes
+    // back out as a low driven clearance instead of the caught-and-punted ball.
+    const backPass = b.lastKick !== null && b.lastKick.team === p.team && b.lastKick !== p;
+    if (backPass) {
+      kickToward(state, p, CX + (b.x < CX ? 40 : -40), MID_Y, 250, 0);
+    } else {
+      kickToward(state, p, CX + (b.x < CX ? 40 : -40), MID_Y, 300, 90);
+    }
     return;
   }
   const lineY = ownGoalY(p) + (p.attacksTop ? -7 : 7);

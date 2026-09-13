@@ -245,6 +245,7 @@ function strike(state: GameState, p: Player, charge: number): void {
   b.aftertouch = AFTERTOUCH_WINDOW;
   b.controlLock = CONTROL_LOCK;
   b.owner = p;
+  b.lastKick = p;
   p.state = 'kick';
   p.stateTimer = KICK_LOCK;
   emitSfx(tap ? 'pass' : 'shot', tap ? 0.8 : clamp(speed / SHOT_MAX, 0.6, 1));
@@ -300,6 +301,7 @@ export function resolvePossession(state: GameState, dt: number): void {
       b.controlLock = 0.25; // brief no-control so it squirts free
       emitSfx('tackle', 0.6);
       b.owner = o;
+      b.lastKick = null; // a poked-loose ball is a deflection, not a pass
       state.carrier = null;
       return;
     }
@@ -366,6 +368,7 @@ export function resolveHeaders(state: GameState): void {
   b.aftertouch = 0;
   b.controlLock = 0.2;
   b.owner = best;
+  b.lastKick = null; // a header isn't a kick — the keeper may still pick it up
 
   best.dir = dirFromVec(dx, dy);
   best.state = 'header';
@@ -395,6 +398,7 @@ export function resolveSlideTackles(state: GameState): void {
         b.vz = 0;
         b.controlLock = 0.18;
         b.owner = s;
+        b.lastKick = null; // won in a tackle, not a deliberate pass
         if (state.carrier === o) state.carrier = null;
         emitSfx('tackle', 0.7);
       } else {
@@ -556,6 +560,7 @@ export function kickToward(
   b.aftertouch = 0;
   b.controlLock = 0.22;
   b.owner = p;
+  b.lastKick = p;
   p.dir = dirFromVec(fx, fy);
   p.state = 'kick';
   p.stateTimer = KICK_LOCK;
