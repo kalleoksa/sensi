@@ -207,8 +207,14 @@ export function recordYourResult(
 export function simRound(comp: Competition): void {
   for (const f of comp.rounds[comp.roundIndex]) {
     if (f.played) continue;
-    f.sa = comp.rng.int(0, MAX_GOALS);
-    f.sb = comp.rng.int(0, MAX_GOALS);
+    // Skill tilts the simulated scoreline: each star of difference shifts a
+    // goal of ceiling from the weaker side to the stronger (still random, so
+    // upsets happen — a minnow can nick one against anyone).
+    const tilt = Math.round((f.a.skill - f.b.skill) / 2);
+    const capA = Math.max(1, Math.min(MAX_GOALS + 1, MAX_GOALS + tilt));
+    const capB = Math.max(1, Math.min(MAX_GOALS + 1, MAX_GOALS - tilt));
+    f.sa = comp.rng.int(0, capA);
+    f.sb = comp.rng.int(0, capB);
     resolve(f, comp.rng);
   }
 }

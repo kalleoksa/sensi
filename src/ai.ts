@@ -18,8 +18,29 @@ import { moveToward, kickToward, integrate, startSlideToward, PLAYER_SPEED } fro
 import { GROUND_FRICTION, GRAVITY } from './ball';
 import { FIELD_T, FIELD_B, FIELD_L, FIELD_R, PLAY_W, PLAY_H, CX, GOAL_W, GOAL_HEIGHT, PEN_BOX_W } from './world';
 
-const AI_SPEED = PLAYER_SPEED * 0.94; // a touch slower than the human
-const SHOOT_RANGE = 130;
+// AI players run a touch below their own top pace, so the human keeps a small
+// edge over an equal-skill side. p.speed itself is scaled by team skill.
+const AI_FACTOR = 0.94;
+function aiSpeed(p: Player): number {
+  return p.speed * AI_FACTOR;
+}
+
+// How far below 5 stars this player's team is (0..4), recovered from the pace
+// scaling applied in team.ts. Drives the low-skill pass/shot wobble.
+function skillDeficit(p: Player): number {
+  return Math.max(0, Math.min(4, (PLAYER_SPEED - p.speed) / (PLAYER_SPEED * 0.025)));
+}
+
+// Deterministic per-position wobble in [-1,1]^2 (no RNG: the seeded sim stays
+// reproducible). Weak sides misplace kicks by up to a few px per deficit star.
+function kickWobble(p: Player): { wx: number; wy: number } {
+  const a = Math.sin(p.x * 12.9898 + p.y * 78.233) * 43758.5453;
+  const b = Math.sin(p.y * 39.3468 + p.x * 11.135) * 24634.6345;
+  return { wx: (a - Math.floor(a)) * 2 - 1, wy: (b - Math.floor(b)) * 2 - 1 };
+}
+const SHOOT_RANGE = 185; // have a go from distance, SWOS-style — the block +
+// equal-pace press means a carrier almost never reaches the old 130px range,
+// which made AI halves shotless (and CPU matches permanently 0-0)
 const FORWARD_PROGRESS_MIN = 25; // a safe forward pass gaining this much is worth taking
 const RELEASE_DIST = 16; // defender this close => about to tackle, release the ball now
 const BAIL_MAX_BACK = 25; // a release pass may not go more than this far backwards
@@ -28,8 +49,8 @@ const MAX_SUPPORT = 3; // off-ball attackers making forward runs at once
 
 // Pass / shot evaluation speeds (must match the speeds the AI actually kicks at,
 // so the interception test predicts real ball travel — see carrierAi/kickToward).
-const PASS_EVAL_SPEED = 215;
-const SHOT_EVAL_SPEED = 360;
+const PASS_EVAL_SPEED = 240;
+const SHOT_EVAL_SPEED = 390;
 const MIN_PASS_DIST = 24; // shorter than this isn't worth a pass
 const PASS_LEAD_TIME = 0.35; // seconds of the receiver's run to lead a pass into
 const INTERCEPT_PAD = 8; // player+ball radii: opponent this close to the lane intercepts
@@ -563,7 +584,7 @@ function pressAi(state: GameState, p: Player, dt: number): void {
     }
   }
   // Chase / press right onto the ball (arrive=1) so contact pokes it loose.
-  moveToward(p, b.x, b.y, dt, AI_SPEED, 1);
+  moveToward(p, b.x, b.y, dt, aiSpeed(p), 1);
 }
 
 export function updateTeamAi(state: GameState, dt: number): void {
@@ -660,16 +681,20 @@ function carrierAi(state: GameState, p: Player, dt: number): void {
   const dGoal = Math.hypot(CX - p.x, goalY - p.y);
   const fs = p.attacksTop ? -1 : 1;
 
+  // Weak sides spray their kicks a little (deterministic, scaled by skill).
+  const { wx, wy } = kickWobble(p);
+  const err = skillDeficit(p);
+
   // 1) Shoot if in range with a clear lane (beating the keeper).
   if (dGoal < SHOOT_RANGE && passSafe(state, p.x, p.y, CX, goalY, p.team, SHOT_EVAL_SPEED, true)) {
-    kickToward(state, p, CX, goalY, SHOT_EVAL_SPEED, 70);
+    kickToward(state, p, CX + wx * err * 4, goalY, SHOT_EVAL_SPEED, 70);
     return;
   }
 
   // 1b) Tight to goal with no clear lane: shoot anyway — a blocked/saved shot
   //     beats dribbling the ball over the byline.
   if (dGoal < SHOOT_RANGE * 0.55) {
-    kickToward(state, p, CX, goalY, SHOT_EVAL_SPEED, 40);
+    kickToward(state, p, CX + wx * err * 4, goalY, SHOT_EVAL_SPEED, 40);
     return;
   }
 
@@ -679,16 +704,22 @@ function carrierAi(state: GameState, p: Player, dt: number): void {
   const fwd = bestPass(state, p);
   if (fwd && fwd.advance > FORWARD_PROGRESS_MIN) {
     const m = fwd.mate;
-    const lx = clamp(m.x + m.vx * PASS_LEAD_TIME, FIELD_L + 6, FIELD_R - 6);
-    const ly = clamp(m.y + m.vy * PASS_LEAD_TIME + fs * 8, FIELD_T + 6, FIELD_B - 6);
+    const lx = clamp(m.x + m.vx * PASS_LEAD_TIME + wx * err * 3, FIELD_L + 6, FIELD_R - 6);
+    const ly = clamp(m.y + m.vy * PASS_LEAD_TIME + wy * err * 3, FIELD_T + 6, FIELD_B - 6);
     kickToward(state, p, lx, ly, PASS_EVAL_SPEED);
     return;
   }
 
   // 3) About to be tackled (from ANY side — a chaser from behind is the usual
-  //    way an equal-speed dribbler is dispossessed): release to the best outlet.
+  //    way an equal-speed dribbler is dispossessed): in shooting range, let fly
+  //    rather than recycle — a blocked or saved shot makes corners and rebounds,
+  //    an endless release-valve makes 0-0. Otherwise release to the best outlet.
   const { opp, d } = nearestOpponent(state, p);
   if (d < RELEASE_DIST) {
+    if (dGoal < SHOOT_RANGE) {
+      kickToward(state, p, CX + wx * (2 + err * 4), goalY, SHOT_EVAL_SPEED, 90);
+      return;
+    }
     const bail = safestPass(state, p) ?? fwd?.mate ?? null;
     if (bail) {
       kickToward(state, p, bail.x, bail.y, PASS_EVAL_SPEED);
@@ -707,7 +738,7 @@ function carrierAi(state: GameState, p: Player, dt: number): void {
     const side = wide ? Math.sign(CX - p.x) || -1 : p.x <= opp.x ? -1 : 1;
     tx = clamp(p.x + side * 30, FIELD_L + 8, FIELD_R - 8);
   }
-  moveToward(p, tx, ty, dt, AI_SPEED);
+  moveToward(p, tx, ty, dt, aiSpeed(p));
 }
 
 // Back up the presser: sit a short way behind the ball toward our own goal so a
@@ -720,7 +751,7 @@ function coverAi(state: GameState, p: Player, dt: number): void {
   const len = Math.hypot(dx, dy) || 1;
   const tx = clamp(b.x + (dx / len) * COVER_GAP, FIELD_L + 4, FIELD_R - 4);
   const ty = clamp(b.y + (dy / len) * COVER_GAP, FIELD_T + 6, FIELD_B - 6);
-  moveToward(p, tx, ty, dt, AI_SPEED);
+  moveToward(p, tx, ty, dt, aiSpeed(p));
 }
 
 // Mark a man: stand goal-side of him, nudged a little central toward our goal.
@@ -738,14 +769,14 @@ function markAi(state: GameState, p: Player, dt: number): void {
   // the line — leave the ball in behind to the keeper instead of being dragged
   // onto our own goal line, so the box isn't packed and there's space to attack.
   ty = clampToLine(ty, p, defendDepthFloor(p, state.ball.y));
-  moveToward(p, tx, ty, dt, AI_SPEED);
+  moveToward(p, tx, ty, dt, aiSpeed(p));
 }
 
 // Off-ball attacking run: move to the best support spot picked for this player
 // by assignSupportTargets (the SupportSpotCalculator) — open, in pass range,
 // and a threat — so the carrier always has somewhere to play the ball.
 function supportAi(p: Player, dt: number): void {
-  moveToward(p, p.supportX, p.supportY, dt, AI_SPEED);
+  moveToward(p, p.supportX, p.supportY, dt, aiSpeed(p));
 }
 
 // Hold a compact formation point that tracks the ball, keeping relative spacing.
@@ -770,7 +801,7 @@ function holdAi(state: GameState, p: Player, dt: number): void {
     ty = clampToLine(ty, p, defendDepthFloor(p, b.y));
   }
   ty = clamp(ty, FIELD_T + 6, FIELD_B - 6);
-  moveToward(p, tx, ty, dt, AI_SPEED * 0.92);
+  moveToward(p, tx, ty, dt, aiSpeed(p) * 0.92);
 }
 
 const GK_HOLD = 0.45; // seconds a keeper holds a catch before distributing
@@ -901,7 +932,7 @@ export function gkAi(state: GameState, p: Player, dt: number): void {
     const depth = (cy2 - goalLine) * into;
     if (depth > -4 && depth < CLAIM_DEPTH && Math.abs(cx2 - CX) < PEN_BOX_W / 2 - 8) {
       const ty2 = clamp((cy2 - goalLine) * into, 2, CLAIM_DEPTH);
-      moveToward(p, clamp(cx2, CX - PEN_BOX_W / 2 + 8, CX + PEN_BOX_W / 2 - 8), goalLine + into * ty2, dt, AI_SPEED, 1);
+      moveToward(p, clamp(cx2, CX - PEN_BOX_W / 2 + 8, CX + PEN_BOX_W / 2 - 8), goalLine + into * ty2, dt, aiSpeed(p), 1);
       return;
     }
   }
@@ -910,5 +941,5 @@ export function gkAi(state: GameState, p: Player, dt: number): void {
   // Edge off the line toward the ball when it's close and central.
   const ballClose = Math.abs(b.y - lineY) < 80 && Math.abs(b.x - CX) < GOAL_W;
   const ty = ballClose ? lineY + (p.attacksTop ? -10 : 10) : lineY;
-  moveToward(p, tx, ty, dt, AI_SPEED, 1);
+  moveToward(p, tx, ty, dt, aiSpeed(p), 1);
 }
