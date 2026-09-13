@@ -118,6 +118,8 @@ const TEAM_STYLE: ListStyle = { ...DEFAULT_STYLE, lineGap: 2 };
 export interface AppDeps {
   ctx: CanvasRenderingContext2D;
   renderMatch: (session: Session, alpha: number) => void;
+  // Touch devices switch between the zoomed match view and the menu view.
+  setMatchView?: (on: boolean) => void;
 }
 
 export interface App {
@@ -137,7 +139,7 @@ export interface SensiDev {
 }
 
 export function makeApp(deps: AppDeps): App {
-  const { ctx, renderMatch } = deps;
+  const { ctx, renderMatch, setMatchView } = deps;
 
   let screen: AppScreen = 'title';
   let frames = 0; // for the title blink
@@ -539,13 +541,19 @@ export function makeApp(deps: AppDeps): App {
     }
 
     if (c.exit) {
-      // Abandon the match. A competition match quit part-way is dropped whole:
-      // the tournament stays saved (CONTINUE picks it back up at the hub) but the
-      // in-memory run is detached so nothing else can post a result into it.
-      abandonSession();
-      screen = 'mainMenu';
-      emitSfx('uiSelect');
-      return;
+      // Esc is a two-step quit: first pause (an "are you sure" beat), then quit
+      // from the paused state, so one stray press or tap can't abandon a match.
+      // A competition match quit part-way is dropped whole: the tournament stays
+      // saved (CONTINUE picks it back up at the hub) but the in-memory run is
+      // detached so nothing else can post a result into it.
+      if (!session.paused) {
+        session.paused = true;
+      } else {
+        abandonSession();
+        screen = 'mainMenu';
+        emitSfx('uiSelect');
+        return;
+      }
     }
     if (c.controls) {
       showControls = !showControls;
@@ -818,7 +826,8 @@ export function makeApp(deps: AppDeps): App {
 
   function drawLeagueTable(comp: Competition): void {
     const table = leagueTable(comp);
-    const x = { pos: 10, team: 34, p: 200, gd: 236, pts: 286 };
+    const ox = Math.max(0, Math.round((VIEW_W - 384) / 2)); // center on wide views
+    const x = { pos: 10 + ox, team: 34 + ox, p: 200 + ox, gd: 236 + ox, pts: 286 + ox };
     text1('P', x.p, 44, SUBTLE);
     text1('GD', x.gd, 44, SUBTLE);
     text1('PTS', x.pts, 44, SUBTLE);
@@ -841,7 +850,8 @@ export function makeApp(deps: AppDeps): App {
   // qualify; a strong 3rd can too via best-thirds, shown at full time).
   function drawGroupTable(comp: Competition, teams: TeamDef[]): void {
     const table = groupTable(comp, teams);
-    const x = { pos: 44, team: 66, p: 244, gd: 286, pts: 338 };
+    const ox = Math.max(0, Math.round((VIEW_W - 384) / 2)); // center on wide views
+    const x = { pos: 44 + ox, team: 66 + ox, p: 244 + ox, gd: 286 + ox, pts: 338 + ox };
     text1('P', x.p, 50, SUBTLE);
     text1('GD', x.gd, 50, SUBTLE);
     text1('PTS', x.pts, 50, SUBTLE);
@@ -995,15 +1005,16 @@ export function makeApp(deps: AppDeps): App {
       drawControlsList(70);
       drawTextCentered(ctx, 'C / P  RESUME', 0, VIEW_W, VIEW_H - 16, SUBTLE, 1);
     } else if (session.paused) {
-      drawTextCentered(ctx, 'C  CONTROLS', 0, VIEW_W, VIEW_H - 16, SUBTLE, 1);
+      drawTextCentered(ctx, 'C CONTROLS   ESC QUIT', 0, VIEW_W, VIEW_H - 16, SUBTLE, 1);
     }
   }
 
   function drawControlsList(topY: number): void {
+    const ox = Math.max(0, Math.round((VIEW_W - 384) / 2)); // center on wide views
     let y = topY;
     for (const [label, key] of CONTROL_ROWS) {
-      drawText(ctx, label, 70, y, DEFAULT_STYLE.on, 1);
-      drawText(ctx, key, 200, y, DEFAULT_STYLE.hi, 1);
+      drawText(ctx, label, 70 + ox, y, DEFAULT_STYLE.on, 1);
+      drawText(ctx, key, 200 + ox, y, DEFAULT_STYLE.hi, 1);
       y += 18;
     }
   }
@@ -1020,6 +1031,7 @@ export function makeApp(deps: AppDeps): App {
   return {
     update(dt: number): void {
       frames++;
+      setMatchView?.(screen === 'match'); // no-ops unless it changes
       // Theme tune plays across the menus, hushed once a match is live.
       if (screen === 'match') stopTheme();
       else startTheme();

@@ -3,9 +3,10 @@
 // screen state machine (title -> menus -> match) and creates a match session on
 // demand; the fixed-step loop just drives app.update / app.draw.
 
-import { VIEW_W, VIEW_H } from './world';
+import { VIEW_W, VIEW_H, setViewSize } from './world';
 import { startLoop } from './loop';
 import { initInput } from './input';
+import { initTouch, isTouchDevice } from './touch';
 import { bakePitchFor } from './sprites/pitch_gen';
 import { makeRenderer } from './render';
 import { initAudio, flushSfx } from './audio';
@@ -18,15 +19,70 @@ canvas.height = VIEW_H;
 const ctx = canvas.getContext('2d')!;
 ctx.imageSmoothingEnabled = false;
 
+// Desktop keeps crisp pixel-perfect integer scaling of the fixed 384x320 view.
+// Touch devices cover the whole display, with two sizings:
+//  - MATCH: a zoomed camera — the screen aspect fitted inside the
+//    MATCH_MAX_W x MATCH_MAX_H zoom box (itself inside the world), so the
+//    camera scrolls, players render big, and nothing beyond the stadium shows.
+//  - MENUS: landscape keeps the 320px logical height the screens are laid
+//    out for and widens; portrait keeps the 384px width and lengthens.
+// The app flips the mode via setMatchView when a match is on screen.
+const touchDevice = isTouchDevice();
+const MATCH_MAX_W = 400; // mobile match zoom box (both under the world's
+const MATCH_MAX_H = 448; // 448x536, so nothing outside the stadium ever shows)
+let matchView = false;
+export function setMatchView(on: boolean): void {
+  if (matchView === on) return;
+  matchView = on;
+  fitToWindow();
+}
 function fitToWindow(): void {
-  const scale = Math.max(1, Math.min(Math.floor(window.innerWidth / VIEW_W), Math.floor(window.innerHeight / VIEW_H)));
+  const vw = window.visualViewport?.width ?? window.innerWidth;
+  const vh = window.visualViewport?.height ?? window.innerHeight;
+  if (touchDevice) {
+    let w: number;
+    let h: number;
+    if (matchView) {
+      // Zoom box: the screen aspect fitted inside MATCH_MAX_W x MATCH_MAX_H —
+      // tighter than the world, so the camera scrolls and players render big
+      // (iPhone landscape ~400x185 at ~2.1x, portrait ~207x448 at ~1.9x).
+      const a = vw / vh;
+      if (a >= MATCH_MAX_W / MATCH_MAX_H) {
+        w = MATCH_MAX_W;
+        h = Math.round(MATCH_MAX_W / a);
+      } else {
+        h = MATCH_MAX_H;
+        w = Math.round(MATCH_MAX_H * a);
+      }
+    } else if (vw >= vh) {
+      h = 320;
+      w = Math.min(720, Math.max(384, Math.round((320 * vw) / vh)));
+    } else {
+      w = 384;
+      h = Math.min(704, Math.max(320, Math.round((384 * vh) / vw)));
+    }
+    setViewSize(w, h);
+    canvas.width = w;
+    canvas.height = h;
+    ctx.imageSmoothingEnabled = false; // resizing the buffer resets ctx state
+    canvas.style.width = `${vw}px`;
+    canvas.style.height = `${vh}px`;
+    return;
+  }
+  const fit = Math.min(vw / VIEW_W, vh / VIEW_H);
+  const scale = Math.max(1, Math.floor(fit));
   canvas.style.width = `${VIEW_W * scale}px`;
   canvas.style.height = `${VIEW_H * scale}px`;
 }
 window.addEventListener('resize', fitToWindow);
+window.addEventListener('orientationchange', fitToWindow);
+// iOS Safari resizes the visual viewport (not the window) when its toolbar
+// collapses/expands; re-fit on those too.
+window.visualViewport?.addEventListener('resize', fitToWindow);
 fitToWindow();
 
 initInput();
+initTouch(); // on-screen joystick + buttons; no-op on mouse/keyboard devices
 initAudio(); // unlocks on first gesture; "M" toggles mute
 
 const render = makeRenderer(ctx);
@@ -35,7 +91,7 @@ const render = makeRenderer(ctx);
 const renderMatch = (s: Session, alpha: number): void =>
   render(bakePitchFor(s.config.pitch), s.state, alpha, s.match, s.paused);
 
-const app = makeApp({ ctx, renderMatch });
+const app = makeApp({ ctx, renderMatch, setMatchView });
 
 startLoop(
   (dt) => app.update(dt),

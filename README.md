@@ -39,6 +39,23 @@ your window with nearest-neighbour filtering for crisp pixels.
 The action button auto-controls the player on your team nearest the ball; a
 chevron marks who you're driving.
 
+### Touch (phones / tablets)
+
+On coarse-pointer devices (or with `?touch=1` in the URL) an on-screen overlay
+appears and the game fills the **whole screen** with a zoomed camera: the match
+view is the largest screen-shaped window that fits inside the stadium, so
+players render large and the camera scrolls (landscape shows the full pitch
+width; portrait the full length). Menus use their own full-bleed layout:
+
+- **left thumb** — floating joystick (appears where you touch): move, aim set
+  pieces, aftertouch.
+- **right thumb** — the whole lower-right zone is the **KICK** button: tap =
+  pass, hold = shot power, hold with no ball = slide.
+- **top-right** — pause and back buttons. During a match, back pauses first;
+  pressing it again while paused quits (no accidental exits).
+
+Touch drives Player 1 alongside the keyboard; two-player stays keyboard-only.
+
 ## What's in it
 
 - Fixed-timestep 60 Hz simulation with interpolated rendering; deterministic,

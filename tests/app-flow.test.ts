@@ -85,7 +85,10 @@ describe('quitting a match', () => {
     const fixture = yourFixture(comp)!;
     kickOffCompMatch();
 
-    tap('Escape'); // abandon the competition match
+    tap('Escape'); // first Esc only pauses: a stray press must not abandon a match
+    expect(dev.screen()).toBe('match');
+    expect(dev.session()!.paused).toBe(true);
+    tap('Escape'); // second Esc, from paused, quits
     expect(dev.screen()).toBe('mainMenu');
     expect(dev.session()).toBeNull();
     expect(dev.competition(), 'the abandoned run must not stay attached').toBeNull();
@@ -114,7 +117,8 @@ describe('quitting a match', () => {
     expect(hasTournament()).toBe(true);
 
     kickOffCompMatch();
-    tap('Escape');
+    tap('Escape'); // pause
+    tap('Escape'); // quit
     expect(dev.screen()).toBe('mainMenu');
     expect(dev.competition()).toBeNull();
     // The run itself survives: CONTINUE is offered and loads back into the hub.
