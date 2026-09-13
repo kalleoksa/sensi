@@ -178,7 +178,12 @@ function resolve(f: Fixture, rng: Rng): void {
 
 // Record the player's own result. yourGoals/oppGoals come from the live match
 // (the player is always team `a` of their fixture).
-export function recordYourResult(comp: Competition, yourGoals: number, oppGoals: number): void {
+export function recordYourResult(
+  comp: Competition,
+  yourGoals: number,
+  oppGoals: number,
+  pensWon?: boolean,
+): void {
   const f = yourFixture(comp);
   if (!f) return;
   // Orient so the score lands on the right side regardless of how the schedule
@@ -191,6 +196,11 @@ export function recordYourResult(comp: Competition, yourGoals: number, oppGoals:
     f.sa = oppGoals;
   }
   resolve(f, comp.rng);
+  // A drawn knockout tie the player settled on the pitch (a real shootout)
+  // overrides resolve()'s coin-flip penalties.
+  if (pensWon !== undefined && f.sa === f.sb) {
+    f.winner = pensWon ? comp.you : f.a === comp.you ? f.b : f.a;
+  }
 }
 
 // Auto-simulate every other unplayed fixture in the current round.

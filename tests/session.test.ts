@@ -33,6 +33,7 @@ function session(controlMode: ControlMode = '1p'): Session {
     awayFormation: DEFAULT_FORMATION,
     halfLength: 90,
     pitch: PITCHES[0],
+    offside: true,
   });
 }
 

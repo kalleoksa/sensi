@@ -209,6 +209,65 @@ function bestPassTarget(state: GameState, p: Player): Player | null {
   return best;
 }
 
+// Arm the offside watch for a kick by `kicker`: snapshot which teammates are in
+// an offside position right now — in the opponent half, ahead of the ball, and
+// ahead of the second-last opponent (the last outfield defender; the keeper is
+// usually deepest). checkOffside (session step) then judges the first touch.
+function armOffside(state: GameState, kicker: Player): void {
+  if (!state.offsideEnabled || state.suppressOffside) return;
+  state.offsideWatch = null;
+  const top = kicker.attacksTop;
+  const midY = (FIELD_T + FIELD_B) / 2;
+  const adv = (y: number): number => (top ? -y : y); // larger = nearer the goal attacked
+  let bestA = -Infinity;
+  let bestY = 0;
+  let sndA = -Infinity;
+  let sndY = top ? FIELD_T : FIELD_B; // no opponents: the line is the goal line
+  for (const q of state.players) {
+    if (q.team === kicker.team || q.sentOff) continue;
+    const a = adv(q.y);
+    if (a > bestA) {
+      sndA = bestA;
+      sndY = bestY;
+      bestA = a;
+      bestY = q.y;
+    } else if (a > sndA) {
+      sndA = a;
+      sndY = q.y;
+    }
+  }
+  const lineY = sndA === -Infinity ? bestY : sndY;
+  const ballY = state.ball.y;
+  const flagged: { p: Player; x: number; y: number }[] = [];
+  for (const m of state.players) {
+    if (m.team !== kicker.team || m === kicker || m.sentOff || m.role === 'gk') continue;
+    const inOppHalf = top ? m.y < midY : m.y > midY;
+    const aheadOfBall = top ? m.y < ballY : m.y > ballY;
+    const aheadOfLine = top ? m.y < lineY : m.y > lineY;
+    if (inOppHalf && aheadOfBall && aheadOfLine) flagged.push({ p: m, x: m.x, y: m.y });
+  }
+  state.offsideWatch = flagged.length > 0 ? { kicker, team: kicker.team, flagged } : null;
+}
+
+// Judge the offside watch against the latest touch: the kicker keeping /
+// re-taking the ball clears it; any other player's touch resolves it — a
+// flagged teammate raises the flag (free kick to the defenders, taken where he
+// stood at the kick), anyone else plays the watch off. Called once per step
+// from the session, after possession resolves.
+export function checkOffside(state: GameState): void {
+  const w = state.offsideWatch;
+  if (!w) return;
+  if (state.carrier === w.kicker) {
+    state.offsideWatch = null; // dribbled it himself: a fresh situation
+    return;
+  }
+  const o = state.ball.owner;
+  if (!o || o === w.kicker) return; // ball still on its way
+  const hit = o.team === w.team ? w.flagged.find((f) => f.p === o) : undefined;
+  if (hit) state.offside = { team: (1 - w.team) as 0 | 1, x: hit.x, y: hit.y };
+  state.offsideWatch = null;
+}
+
 function strike(state: GameState, p: Player, charge: number): void {
   const b = state.ball;
   let [fx, fy] = DIR_VEC[p.dir];
@@ -235,6 +294,7 @@ function strike(state: GameState, p: Player, charge: number): void {
     speed = SHOT_MIN + t * (SHOT_MAX - SHOT_MIN);
     loft = t * SHOT_LOFT;
   }
+  armOffside(state, p); // judge teammates' positions at the moment of the kick
   // Strike from just ahead of the boot so it visibly leaves the feet.
   b.x = p.x + fx * 6;
   b.y = p.y + fy * 6;
@@ -568,7 +628,9 @@ export function moveToward(
   integrate(p, dt);
 }
 
-// Generic kick toward a target point (AI passes, shots, clearances).
+// Generic kick toward a target point (AI passes, shots, clearances). Restart
+// deliveries (throw-ins, goal kicks, corners, free kicks, penalties) pass
+// `armOff = false`: SWOS-style, there's no offside from a set-piece delivery.
 export function kickToward(
   state: GameState,
   p: Player,
@@ -576,6 +638,7 @@ export function kickToward(
   ty: number,
   speed: number,
   loft = 0,
+  armOff = true,
 ): void {
   const dx = tx - p.x;
   const dy = ty - p.y;
@@ -583,6 +646,7 @@ export function kickToward(
   const fx = dx / d;
   const fy = dy / d;
   const b = state.ball;
+  if (armOff) armOffside(state, p);
   b.x = p.x + fx * 6;
   b.y = p.y + fy * 6;
   b.vx = fx * speed;

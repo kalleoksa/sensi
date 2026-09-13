@@ -4,8 +4,8 @@
 // the current screen. The match itself is unchanged — it just no longer boots
 // at module load; a session is created on demand when a Friendly launches.
 
-import { VIEW_W, VIEW_H, FIELD_T, FIELD_B } from './world';
-import { drawText, drawTextCentered } from './sprites/font';
+import { VIEW_W, VIEW_H, FIELD_T, FIELD_B, CX, GOAL_W } from './world';
+import { drawText, drawTextCentered, measure } from './sprites/font';
 import { makeList, listMove, drawList, DEFAULT_STYLE, type ListStyle, type ListView } from './menu';
 import { consumeMenuInput, consumeMatchControls, clearActionEdges } from './input';
 import { emitSfx, setCrowdIntensity, startTheme, stopTheme } from './audio';
@@ -17,6 +17,7 @@ import {
   type Session,
   type ControlMode,
 } from './session';
+import { makeShootout, stepShootout } from './shootout';
 import { CONTINENTS, TEAMS, teamsIn, type TeamDef, type Kit } from './teams/data';
 import {
   FORMATION_IDS,
@@ -291,8 +292,10 @@ export function makeApp(deps: AppDeps): App {
       awayFormation,
       halfLength: MATCH_LENGTHS[options.lengthIndex].half,
       pitch: PITCHES[options.pitchIndex],
+      offside: options.offside,
     });
     sessionKind = pendingSessionKind;
+    session.shootout = null;
     clearActionEdges(); // don't let the confirming keypress leak in as a kick
     fullTimeTimer = 0;
     showControls = false;
@@ -470,22 +473,24 @@ export function makeApp(deps: AppDeps): App {
       optCursor--;
       emitSfx('uiMove');
     }
-    if (m.down && optCursor < 2) {
+    if (m.down && optCursor < 3) {
       optCursor++;
       emitSfx('uiMove');
     }
     const delta = (m.left ? -1 : 0) + (m.right ? 1 : 0);
-    if (delta !== 0 && optCursor < 2) {
+    if (delta !== 0 && optCursor < 3) {
       if (optCursor === 0) {
         const len = MATCH_LENGTHS.length;
         options.lengthIndex = (options.lengthIndex + delta + len) % len;
-      } else {
+      } else if (optCursor === 1) {
         const len = PITCHES.length;
         options.pitchIndex = (options.pitchIndex + delta + len) % len;
+      } else {
+        options.offside = !options.offside;
       }
       emitSfx('uiMove');
     }
-    if (m.confirm && optCursor === 2) {
+    if (m.confirm && optCursor === 3) {
       emitSfx('uiSelect');
       screen = 'controls';
       return;
@@ -528,15 +533,37 @@ export function makeApp(deps: AppDeps): App {
     const c = consumeMatchControls();
 
     // Full time: hold the FULL TIME overlay for a beat (Esc skips), then show
-    // the result screen with PLAY AGAIN / MAIN MENU. The match sim is frozen.
+    // the result screen with PLAY AGAIN / MAIN MENU — unless a drawn knockout
+    // tie needs settling: then a real penalty shootout starts instead of the
+    // old coin flip.
     if (session.match.phase === 'fulltime') {
       fullTimeTimer += dt;
+      // A drawn knockout tie goes to penalties. Only for the match this session
+      // is actually playing for a competition (never a friendly, see #9).
+      const knockout =
+        sessionKind === 'competition' &&
+        !!competition &&
+        (competition.kind === 'cup' || (competition.kind === 'worldcup' && competition.roundIndex >= 3));
+      const tied = session.match.score[0] === session.match.score[1];
       if (c.exit || fullTimeTimer >= FULLTIME_HOLD) {
-        if (sessionKind === 'competition' && competition) enterCompResults();
+        if (knockout && tied) {
+          session.shootout = makeShootout(session.state);
+          session.match.phase = 'shootout';
+          clearActionEdges(); // the skip press mustn't fire the first kick
+        } else if (sessionKind === 'competition' && competition) enterCompResults();
         else enterPostMatch();
       } else {
         stepSession(session, dt); // keeps the ball settling + crowd alive
       }
+      return;
+    }
+
+    // Penalty shootout: stepped by its own driver; the result screen follows.
+    if (session.match.phase === 'shootout' && session.shootout) {
+      if (c.pause) session.paused = !session.paused;
+      if (!session.paused) stepShootout(session, dt);
+      const so = session.shootout;
+      if (so.stage === 'done' && (so.timer <= 0 || c.exit)) enterCompResults();
       return;
     }
 
@@ -615,7 +642,12 @@ export function makeApp(deps: AppDeps): App {
       screen = 'mainMenu';
       return;
     }
-    recordYourResult(competition, session.match.score[0], session.match.score[1]);
+    recordYourResult(
+      competition,
+      session.match.score[0],
+      session.match.score[1],
+      session.shootout ? session.shootout.winner === 0 : undefined,
+    );
     simRound(competition);
     emitSfx('uiSelect');
     screen = 'compResults';
@@ -794,15 +826,16 @@ export function makeApp(deps: AppDeps): App {
     const rows = [
       { label: 'MATCH LENGTH', value: MATCH_LENGTHS[options.lengthIndex].label },
       { label: 'PITCH', value: PITCHES[options.pitchIndex].name },
+      { label: 'OFFSIDE', value: options.offside ? 'ON' : 'OFF' },
     ];
-    let y = 70;
+    let y = 56;
     for (let i = 0; i < rows.length; i++) {
       const active = i === optCursor;
       drawTextCentered(ctx, rows[i].label, 0, VIEW_W, y, active ? DEFAULT_STYLE.hi : DEFAULT_STYLE.on, 2);
       drawTextCentered(ctx, `< ${rows[i].value} >`, 0, VIEW_W, y + 22, active ? DEFAULT_STYLE.hi : SUBTLE, 2);
-      y += 58;
+      y += 52;
     }
-    drawTextCentered(ctx, 'CONTROLS', 0, VIEW_W, y, optCursor === 2 ? DEFAULT_STYLE.hi : DEFAULT_STYLE.on, 2);
+    drawTextCentered(ctx, 'CONTROLS', 0, VIEW_W, y, optCursor === 3 ? DEFAULT_STYLE.hi : DEFAULT_STYLE.on, 2);
     drawTextCentered(ctx, 'ARROWS CHANGE   ESC BACK', 0, VIEW_W, VIEW_H - 14, SUBTLE, 1);
   }
 
@@ -997,6 +1030,45 @@ export function makeApp(deps: AppDeps): App {
     const distToGoal = Math.min(Math.abs(b.y - FIELD_T), Math.abs(b.y - FIELD_B));
     const near = Math.max(0, 1 - distToGoal / 180);
     setCrowdIntensity(Math.max(near, session.match.flash > 0 ? 1 : 0));
+    // Penalty shootout HUD: running score, result banners, and the human
+    // taker's aim marker in the goal mouth + power bar over the kicker.
+    const so = session.shootout;
+    if (so && session.match.phase === 'shootout') {
+      const { home, away } = session.config;
+      const banner = `PENALTIES  ${home.short} ${so.score[0]} - ${so.score[1]} ${away.short}`;
+      const bw = measure(banner, 1);
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(Math.round((VIEW_W - bw) / 2) - 3, 14, bw + 6, 11);
+      drawTextCentered(ctx, banner, 0, VIEW_W, 16, TITLE, 1);
+      if (so.stage === 'aim' && session.match.humanTeams[so.kickTeam]) {
+        drawTextCentered(ctx, 'AIM < >   HOLD KICK FOR POWER', 0, VIEW_W, VIEW_H - 14, SUBTLE, 1);
+        const cam = session.state.camera;
+        const mx = Math.round(CX + so.aim * (GOAL_W / 2 + 2) - cam.x);
+        const my = Math.round(FIELD_T - cam.y) - 20;
+        ctx.fillStyle = 'rgb(250,230,90)';
+        ctx.fillRect(mx - 1, my, 3, 3);
+        ctx.fillRect(mx, my + 3, 1, 2);
+        if (so.charging && so.kicker) {
+          const k = so.kicker;
+          const frac = Math.min(1, so.charge / 0.7);
+          const hx = Math.round(k.x - cam.x) - 6;
+          const hy = Math.round(k.y - cam.y) - 18;
+          ctx.fillStyle = 'rgba(0,0,0,0.5)';
+          ctx.fillRect(hx, hy, 14, 3);
+          ctx.fillStyle = frac > 0.75 ? 'rgb(230,80,40)' : 'rgb(230,220,60)';
+          ctx.fillRect(hx + 1, hy + 1, Math.round(12 * frac), 1);
+        }
+      }
+      if (so.stage === 'result' && so.lastResult) {
+        const msg = so.lastResult === 'goal' ? 'GOAL!' : so.lastResult === 'saved' ? 'SAVED!' : 'MISSED!';
+        drawTextCentered(ctx, msg, 0, VIEW_W, 36, DEFAULT_STYLE.hi, 2);
+      }
+      if (so.stage === 'done' && so.winner !== null) {
+        const w = so.winner === 0 ? home : away;
+        drawTextCentered(ctx, `${w.name} WIN ON PENALTIES`, 0, VIEW_W, 36, DEFAULT_STYLE.hi, 1);
+      }
+    }
+
     // Controls panel over the (paused) match, or a hint to open it when paused.
     if (showControls) {
       ctx.fillStyle = 'rgba(0,0,0,0.8)';
