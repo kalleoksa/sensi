@@ -41,7 +41,6 @@ function makeTeam(team: 0 | 1, def: TeamDef, slots: Slot[], rng: Rng, gkKit: Kit
       x: home.x,
       y: home.y,
       team,
-      isHuman: false,
       role: slot.role,
       shirt: kit.shirt,
       shorts: kit.shorts,

@@ -45,7 +45,6 @@ export function makeReferee(): Referee {
     stateTimer: 0,
     distance: 0,
     team: 0,
-    isHuman: false,
     role: 'mid',
     duty: 'hold',
     markTarget: null,

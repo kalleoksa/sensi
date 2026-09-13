@@ -6,7 +6,7 @@
 import { VIEW_W, VIEW_H, makeCamera, updateCamera, FIELD_T, FIELD_B, CX } from './world';
 import { consumeInputs, clearGameplayEdges } from './input';
 import { makeBall, stepBall, setPitch } from './ball';
-import { controlHuman, resolvePossession, resolveSlideTackles, resolveHeaders } from './player';
+import { controlHuman, releaseControl, resolvePossession, resolveSlideTackles, resolveHeaders } from './player';
 import { makeMatch, updateMatch, startMatch, aimRestart, deliverRestartAimed, type Match } from './match';
 import { makeTeams } from './team';
 import { updateTeamAi, coastPlayers, positionForRestart } from './ai';
@@ -43,11 +43,11 @@ function pickControlled(s: GameState, team: 0 | 1, current: Player | null): Play
   if (s.carrier && s.carrier.team === team && s.carrier.role !== 'gk') return s.carrier;
   let best: Player | null = current;
   let bestD =
-    current && current.team === team && current.role !== 'gk'
+    current && current.team === team && current.role !== 'gk' && !current.sentOff
       ? Math.hypot(current.x - b.x, current.y - b.y) * 0.8 // stickiness factor
       : Infinity;
   for (const p of s.players) {
-    if (p.team !== team || p.role === 'gk') continue;
+    if (p.team !== team || p.role === 'gk' || p.sentOff) continue;
     const d = Math.hypot(p.x - b.x, p.y - b.y);
     if (d < bestD) {
       bestD = d;
@@ -166,12 +166,17 @@ export function stepSession(s: Session, dt: number): void {
       state.controlled = null;
       state.controlled2 = null;
     } else {
-      state.controlled = pickControlled(state, 0, state.controlled);
+      const next1 = pickControlled(state, 0, state.controlled);
+      if (next1 !== state.controlled) releaseControl(state.controlled);
+      state.controlled = next1;
       controlHuman(state, state.controlled, input.p1, dt);
       if (input.p2) {
-        state.controlled2 = pickControlled(state, 1, state.controlled2);
+        const next2 = pickControlled(state, 1, state.controlled2);
+        if (next2 !== state.controlled2) releaseControl(state.controlled2);
+        state.controlled2 = next2;
         controlHuman(state, state.controlled2, input.p2, dt);
       } else {
+        releaseControl(state.controlled2);
         state.controlled2 = null;
       }
     }

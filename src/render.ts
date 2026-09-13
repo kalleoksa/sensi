@@ -4,6 +4,7 @@
 import { type GameState, type Player } from './state';
 import type { Camera } from './world';
 import type { Match } from './match';
+import { MAX_CHARGE } from './player';
 import { VIEW_W, VIEW_H } from './world';
 import type { BakedPitch } from './sprites/pitch_gen';
 import { buildAtlas, spriteFor, runFrame, CELL_W, CELL_H } from './sprites/player_gen';
@@ -211,10 +212,10 @@ export function makeRenderer(
       Math.round(baked.goalBottom.oy - cam.y),
     );
 
-    // 5. HUD: shot power bar above the charging player's head.
-    const human = state.players.find((p) => p.isHuman && p.charging);
-    if (human) {
-      const frac = Math.min(1, human.charge / 0.7);
+    // 5. HUD: shot power bar above each charging human's head.
+    for (const human of [state.controlled, state.controlled2]) {
+      if (!human || !human.charging) continue;
+      const frac = Math.min(1, human.charge / MAX_CHARGE);
       const hx = Math.round(lerp(human.prevX, human.x, alpha) - cam.x) - 6;
       const hy = Math.round(lerp(human.prevY, human.y, alpha) - cam.y) - 18;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';

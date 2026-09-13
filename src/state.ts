@@ -72,7 +72,6 @@ export interface Player {
   stateTimer: number; // seconds remaining of any input-lock
   distance: number; // accumulated travel, drives the run cycle
   team: 0 | 1;
-  isHuman: boolean;
   role: Role;
   duty: Duty; // transient AI duty for this tick (see Duty)
   markTarget: Player | null; // opponent this player marks when duty === 'mark'

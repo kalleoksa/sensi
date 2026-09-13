@@ -14,7 +14,7 @@
 //   loose   — no carrier: the nearest chases, everyone else tracks the ball.
 
 import { Dir, type GameState, type Player } from './state';
-import { moveToward, kickToward, integrate, startSlideToward, PLAYER_SPEED } from './player';
+import { moveToward, kickToward, integrate, startSlideToward, tickTimers, PLAYER_SPEED } from './player';
 import { GROUND_FRICTION } from './ball';
 import { FIELD_T, FIELD_B, FIELD_L, FIELD_R, PLAY_W, CX, GOAL_W } from './world';
 
@@ -138,7 +138,7 @@ function nearestOpponent(state: GameState, p: Player): { opp: Player | null; d: 
   let opp: Player | null = null;
   let best = Infinity;
   for (const q of state.players) {
-    if (q.team === p.team) continue;
+    if (q.team === p.team || q.sentOff) continue;
     const d = Math.hypot(q.x - p.x, q.y - p.y);
     if (d < best) {
       best = d;
@@ -153,7 +153,7 @@ function nearestOpponent(state: GameState, p: Player): { opp: Player | null; d: 
 function nearestEnemyDist(state: GameState, x: number, y: number, team: 0 | 1): number {
   let best = Infinity;
   for (const q of state.players) {
-    if (q.team === team) continue;
+    if (q.team === team || q.sentOff) continue;
     const d = Math.hypot(q.x - x, q.y - y);
     if (d < best) best = d;
   }
@@ -191,7 +191,7 @@ function passSafe(
   const ux = dx / passDist;
   const uy = dy / passDist;
   for (const q of state.players) {
-    if (q.team === team) continue;
+    if (q.team === team || q.sentOff) continue;
     if (excludeGk && q.role === 'gk') continue;
     const ox = q.x - fromX;
     const oy = q.y - fromY;
@@ -281,7 +281,7 @@ function assignMarks(state: GameState, team: 0 | 1): void {
   const markers = state.players.filter((p) => p.team === team && p.duty === 'mark');
   if (markers.length === 0) return;
   const goalY = ownGoalY(markers[0]);
-  const opps = state.players.filter((p) => p.team !== team && p.role !== 'gk');
+  const opps = state.players.filter((p) => p.team !== team && p.role !== 'gk' && !p.sentOff);
   opps.sort((a, c) => Math.abs(a.y - goalY) - Math.abs(c.y - goalY));
 
   const taken = new Set<Player>();
@@ -469,7 +469,8 @@ function stepDive(p: Player, dt: number): void {
 // slides/knock-downs play out, and any residual run velocity coasts to a stop.
 export function coastPlayers(state: GameState, dt: number): void {
   for (const p of state.players) {
-    if (p.stateTimer > 0) p.stateTimer = Math.max(0, p.stateTimer - dt);
+    if (p.sentOff) continue;
+    tickTimers(p, dt);
     if (p.state === 'gkdive') {
       stepDive(p, dt);
       continue;
@@ -607,7 +608,7 @@ function bestPass(state: GameState, p: Player): PassOption | null {
   let best: PassOption | null = null;
   let bestScore = -Infinity;
   for (const m of state.players) {
-    if (m.team !== p.team || m === p || m.role === 'gk') continue;
+    if (m.team !== p.team || m === p || m.role === 'gk' || m.sentOff) continue;
     const advance = advanceOf(p, p.y, m.y);
     if (advance < 4) continue; // only forward-ish balls
     const passDist = Math.hypot(m.x - p.x, m.y - p.y);
@@ -632,7 +633,7 @@ function safestPass(state: GameState, p: Player): Player | null {
   let best: Player | null = null;
   let bestScore = -Infinity;
   for (const m of state.players) {
-    if (m.team !== p.team || m === p || m.role === 'gk') continue;
+    if (m.team !== p.team || m === p || m.role === 'gk' || m.sentOff) continue;
     const advance = advanceOf(p, p.y, m.y);
     if (advance < -BAIL_MAX_BACK) continue; // don't recycle deep backwards
     const passDist = Math.hypot(m.x - p.x, m.y - p.y);

@@ -237,3 +237,59 @@ describe('paused input', () => {
     expect(frame.released).toBe(false);
   });
 });
+
+// Control hand-off. The human drives whichever teammate is nearest the ball, so
+// control jumps between players constantly; state that only one code path
+// maintained used to leak across those jumps.
+describe('control switching', () => {
+  const DT = 1 / 60;
+
+  // Step past the kickoff freeze into open play.
+  function intoPlay(s: Session): void {
+    for (let i = 0; i < 90 && s.match.phase !== 'play'; i++) stepSession(s, DT);
+    expect(s.match.phase).toBe('play');
+  }
+
+  it('never hands control to a sent-off player, even when he is on the ball', () => {
+    const s = session();
+    intoPlay(s);
+    const ghost = s.state.players.find((p) => p.team === 0 && p.role !== 'gk' && p !== s.state.controlled)!;
+    ghost.sentOff = true;
+    ghost.x = s.state.ball.x;
+    ghost.y = s.state.ball.y;
+    stepSession(s, DT);
+    expect(s.state.controlled).not.toBe(ghost);
+  });
+
+  it('drops a half-built charge when control moves to another player', () => {
+    const s = session();
+    intoPlay(s);
+    keyboard.down('Space');
+    stepSession(s, DT);
+    const first = s.state.controlled!;
+    expect(first.charging).toBe(true);
+
+    // Put the ball on the far-off teammate so the auto-switch picks him instead.
+    const other = s.state.players
+      .filter((p) => p.team === 0 && p.role !== 'gk' && p !== first)
+      .sort((a, b) => Math.hypot(b.x - first.x, b.y - first.y) - Math.hypot(a.x - first.x, a.y - first.y))[0];
+    s.state.ball.x = other.x;
+    s.state.ball.y = other.y;
+    s.state.ball.vx = s.state.ball.vy = 0;
+    stepSession(s, DT);
+
+    expect(s.state.controlled).toBe(other);
+    expect(first.charging, 'the abandoned player must not keep charging').toBe(false);
+    expect(first.charge).toBe(0);
+    keyboard.up('Space');
+  });
+
+  it('ticks the poke-reach window on players the human is not controlling', () => {
+    const s = session();
+    intoPlay(s);
+    const idle = s.state.players.find((p) => p.team === 1 && p.role !== 'gk')!; // AI side: never controlled in 1p
+    idle.pokeTimer = 0.3;
+    for (let i = 0; i < 60; i++) stepSession(s, DT);
+    expect(idle.pokeTimer).toBe(0);
+  });
+});

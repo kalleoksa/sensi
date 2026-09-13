@@ -112,6 +112,15 @@ export function initAudio(): void {
     if (e.code === 'KeyN') setMusicEnabled(!musicEnabled);
   });
 
+  // Silence the crowd bed and music while the tab is hidden. Suspending also
+  // pauses the context clock, so the music scheduler picks up where it left off
+  // instead of catching up on every missed note at once.
+  document.addEventListener('visibilitychange', () => {
+    if (!ctx) return;
+    if (document.hidden) void ctx.suspend();
+    else void ctx.resume();
+  });
+
   makeBadge();
   updateBadge();
 }
@@ -294,6 +303,9 @@ function scheduleMusic(now: number): void {
     nextStepTime = now + 0.06;
     musicGain.gain.setTargetAtTime(0.5, now, 0.1);
   }
+  // Fell behind (frames stopped while the clock ran on): skip ahead rather than
+  // scheduling a burst of stale notes into a single frame.
+  if (nextStepTime < now) nextStepTime = now + 0.06;
   while (nextStepTime < now + LOOKAHEAD) {
     scheduleStep(musicStep, nextStepTime);
     nextStepTime += STEP;
