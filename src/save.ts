@@ -10,7 +10,7 @@ import { makeRng } from './rng';
 import type { Competition, CompetitionKind } from './competition';
 
 const KEY = 'sensi.tournament';
-const VERSION = 1;
+const VERSION = 2; // v2: cup fields are trimmed to a power of two (v1 cups could reach an odd round)
 
 interface SavedFixture {
   a: string;

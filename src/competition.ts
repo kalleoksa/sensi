@@ -102,7 +102,14 @@ export function makeCompetition(kind: CompetitionKind, teams: TeamDef[], you: Te
     for (let r = 0; r < WC_GROUP_ROUNDS; r++) rounds.push(perGroup.flatMap((gr) => gr[r]));
   } else {
     // Cup: pair the shuffled field into the first round; later rounds fill in.
+    // The bracket must be a power of two so every round pairs evenly (52 teams
+    // would leave 13 winners in round 3); trim the field, keeping the player.
     const field = shuffle(teams, rng);
+    let size = 1;
+    while (size * 2 <= field.length) size *= 2;
+    const yi = field.indexOf(you);
+    if (yi >= size) [field[0], field[yi]] = [field[yi], field[0]];
+    field.length = size;
     const first: Fixture[] = [];
     for (let i = 0; i < field.length; i += 2) first.push(fixture(field[i], field[i + 1]));
     rounds = [first];

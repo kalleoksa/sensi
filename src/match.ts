@@ -3,7 +3,8 @@
 // pause, then DELIVERS the ball — a throw-in tossed infield from the line, a
 // goal kick launched by the keeper, a corner crossed toward the box.
 //
-// Team 0 attacks the TOP goal (decreasing y); team 1 attacks the BOTTOM.
+// Team 0 attacks the TOP goal (decreasing y) in the first half and the teams
+// swap ends at half time — always read a player's `attacksTop`, never its team.
 
 import { dirFromVec, type Ball, type GameState, type Player } from './state';
 import { kickToward } from './player';
@@ -218,7 +219,21 @@ export function startMatch(state: GameState, match: Match): void {
   match.score[1] = 0;
   match.flash = 0;
   match.restart = null;
+  match.awaitRestart = null;
+  match.cardFlash = 0;
+  match.cardColor = null;
   match.firstKickoffTeam = 1;
+  // Wipe what the previous match (PLAY AGAIN / R) left behind: cards, a pending
+  // foul, slide cooldowns and the ref's raised card. Sent-off players must be
+  // cleared before resetKickoff, which leaves them off the pitch.
+  for (const p of state.players) {
+    p.yellow = false;
+    p.sentOff = false;
+  }
+  state.foul = null;
+  state.teamSlideCd = [0, 0];
+  state.referee.cardTimer = 0;
+  state.referee.cardColor = null;
   setupHalf(state, match, 1, match.firstKickoffTeam);
 }
 
@@ -279,7 +294,7 @@ function placeRestart(
     taker.x = x < CX ? FIELD_L - 2 : FIELD_R + 2;
     taker.y = y;
   } else {
-    const behind = team === 0 ? 5 : -5;
+    const behind = taker.attacksTop ? 5 : -5; // own side of the ball
     taker.x = Math.max(FIELD_L + 2, Math.min(FIELD_R - 2, x));
     taker.y = Math.max(FIELD_T + 2, Math.min(FIELD_B - 2, y + behind));
   }
@@ -565,7 +580,7 @@ function deliverRestart(state: GameState, match: Match): void {
   for (const m of state.players) {
     if (m.team !== t.team || m === t || m.role === 'gk' || m.sentOff) continue;
     const d = Math.hypot(m.x - b.x, m.y - b.y);
-    const adv = t.team === 0 ? m.y - b.y : b.y - m.y; // negative = ahead
+    const adv = t.attacksTop ? m.y - b.y : b.y - m.y; // negative = ahead
     const score = d + adv * 0.4;
     if (d > 14 && score < bestScore) {
       bestScore = score;
@@ -593,7 +608,7 @@ function deliverRestart(state: GameState, match: Match): void {
   } else {
     // Free kick: play it forward to the best teammate, else upfield toward the
     // opponent goal the taker attacks.
-    const fwd = t.team === 0 ? FIELD_T + 100 : FIELD_B - 100;
+    const fwd = t.attacksTop ? FIELD_T + 100 : FIELD_B - 100;
     const tx = target ? target.x : CX;
     const ty = target ? target.y : fwd;
     kickToward(state, t, tx, ty, 235, 70);

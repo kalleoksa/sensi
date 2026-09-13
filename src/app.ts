@@ -492,7 +492,10 @@ export function makeApp(deps: AppDeps): App {
     }
 
     if (c.exit) {
+      // Abandon the match. The competition (if any) is dropped from memory too;
+      // its last between-match save still resumes from CONTINUE.
       session = null;
+      competition = null;
       screen = 'mainMenu';
       emitSfx('uiSelect');
       return;
