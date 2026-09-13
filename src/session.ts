@@ -4,7 +4,7 @@
 // here so the app shell can own multiple screens above the match.
 
 import { VIEW_W, VIEW_H, makeCamera, updateCamera, FIELD_T, FIELD_B, CX } from './world';
-import { consumeInputs } from './input';
+import { consumeInputs, clearGameplayEdges } from './input';
 import { makeBall, stepBall, setPitch } from './ball';
 import { controlHuman, resolvePossession, resolveSlideTackles, resolveHeaders } from './player';
 import { makeMatch, updateMatch, startMatch, aimRestart, deliverRestartAimed, type Match } from './match';
@@ -74,24 +74,50 @@ export function makeSession(config: MatchConfig): Session {
   setPitch(config.pitch.friction, config.pitch.bounce);
   const match = makeMatch();
   match.halfLength = config.halfLength; // startMatch -> setupHalf resets the clock to this
-  // Which teams a human drives: 1p => team 0 only, 2p => both, cpu => neither.
-  // Throw-ins for a human team are aimed and released by the player.
-  match.humanTeams =
-    config.controlMode === 'cpu' ? [false, false]
-    : config.controlMode === '2p' ? [true, true]
-    : [true, false];
+  match.humanTeams = humanTeamsFor(config.controlMode);
   startMatch(state, match);
   // Center the camera on the ball at kickoff.
   updateCamera(state.camera, state.ball.x, state.ball.y, 0, 0, 1);
   return { state, match, config, paused: false };
 }
 
+// Which teams a human drives: 1p => team 0 only, 2p => both, cpu => neither.
+// Restarts (throw-ins, free kicks, corners, goal kicks) for a human team are
+// aimed and released by that player rather than auto-delivered, so this has to
+// track the control mode exactly — an AI team flagged human would sit on the
+// ball waiting for input that never comes.
+function humanTeamsFor(mode: ControlMode): [boolean, boolean] {
+  if (mode === 'cpu') return [false, false];
+  if (mode === '2p') return [true, true];
+  return [true, false];
+}
+
+// Switch the control mode of a live session (the in-match 2-player toggle).
+// Restart ownership moves with it; a restart already being lined up by a team
+// that just stopped being human is released immediately so play never stalls
+// waiting on a controller that no longer exists.
+export function setControlMode(s: Session, mode: ControlMode): void {
+  if (s.config.controlMode === mode) return;
+  s.config.controlMode = mode;
+  s.match.humanTeams = humanTeamsFor(mode);
+  if (mode !== '2p') s.state.controlled2 = null;
+  const a = s.match.awaitRestart;
+  if (a && !s.match.humanTeams[a.team]) deliverRestartAimed(s.state, s.match);
+}
+
 export function restartSession(s: Session): void {
   startMatch(s.state, s.match);
+  updateCamera(s.state.camera, s.state.ball.x, s.state.ball.y, 0, 0, 1);
 }
 
 export function stepSession(s: Session, dt: number): void {
-  if (s.paused) return; // freeze the sim; render still draws the overlay
+  if (s.paused) {
+    // Freeze the sim; render still draws the overlay. Gameplay edges are dropped
+    // rather than buffered, so nothing the player pressed while paused fires the
+    // moment play resumes.
+    clearGameplayEdges();
+    return;
+  }
   const { state, match, config } = s;
   const twoPlayer = config.controlMode === '2p';
   const input = consumeInputs(twoPlayer);
