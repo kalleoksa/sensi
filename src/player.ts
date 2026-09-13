@@ -45,7 +45,7 @@ const PRESSURE_LEAD = 6; // extra dribble lead at maximum pressure (heavy touch)
 
 // Kick tuning.
 const TAP_CHARGE = 0.16; // below this hold time, it's a pass not a shot
-const MAX_CHARGE = 0.7;
+export const MAX_CHARGE = 0.7; // seconds of hold for full shot power
 const PASS_SPEED = 188;
 const SHOT_MIN = 210;
 const SHOT_MAX = 392;
@@ -71,7 +71,6 @@ export interface PlayerInit {
   x: number;
   y: number;
   team: 0 | 1;
-  isHuman: boolean;
   role: Role;
   shirt: RGB;
   shorts: RGB;
@@ -96,7 +95,6 @@ export function makePlayer(init: PlayerInit): Player {
     stateTimer: 0,
     distance: 0,
     team: init.team,
-    isHuman: init.isHuman,
     role: init.role,
     duty: 'hold',
     markTarget: null,
@@ -420,12 +418,28 @@ export function resolveSlideTackles(state: GameState): void {
   }
 }
 
-// Drive the human-controlled player from the input frame.
-export function controlHuman(state: GameState, p: Player, input: InputFrame, dt: number): void {
-  // Tick down lock + buffer + poke-reach window.
+// Tick down the input lock, tap buffer and poke-reach window. Every movement
+// path (human, AI, coasting) calls this so a timer can't freeze on a player the
+// moment he stops being controlled.
+export function tickTimers(p: Player, dt: number): void {
   if (p.stateTimer > 0) p.stateTimer = Math.max(0, p.stateTimer - dt);
   if (p.bufferedTap > 0) p.bufferedTap = Math.max(0, p.bufferedTap - dt);
   if (p.pokeTimer > 0) p.pokeTimer = Math.max(0, p.pokeTimer - dt);
+}
+
+// Control auto-switches to the teammate nearest the ball. The player being
+// dropped forgets any half-built charge so he doesn't fire a strike or tackle on
+// the first frame he's picked up again.
+export function releaseControl(p: Player | null): void {
+  if (!p) return;
+  p.charging = false;
+  p.charge = 0;
+  p.bufferedTap = 0;
+}
+
+// Drive the human-controlled player from the input frame.
+export function controlHuman(state: GameState, p: Player, input: InputFrame, dt: number): void {
+  tickTimers(p, dt);
 
   const locked = isLocked(p);
   const isCarrier = state.carrier === p;
@@ -507,7 +521,7 @@ export function moveToward(
   speed = PLAYER_SPEED,
   arrive = 2,
 ): void {
-  if (p.stateTimer > 0) p.stateTimer = Math.max(0, p.stateTimer - dt);
+  tickTimers(p, dt);
   const locked = isLocked(p);
   if (!locked) {
     const dx = tx - p.x;
