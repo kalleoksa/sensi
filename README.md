@@ -50,7 +50,8 @@ width; portrait the full length). Menus use their own full-bleed layout:
 - **left thumb** — floating joystick (appears where you touch): move, aim set
   pieces, aftertouch.
 - **right thumb** — the whole lower-right zone is the **KICK** button: tap =
-  pass, hold = shot power, hold with no ball = slide.
+  pass, hold = shot power, hold with no ball = slide. When your keeper
+  gathers the ball, you aim his distribution the same way (stick + hold).
 - **top-right** — pause and back buttons. During a match, back pauses first;
   pressing it again while paused quits (no accidental exits).
 

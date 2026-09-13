@@ -15,8 +15,8 @@
 
 import { Dir, type GameState, type Player } from './state';
 import { moveToward, kickToward, integrate, startSlideToward, PLAYER_SPEED } from './player';
-import { GROUND_FRICTION } from './ball';
-import { FIELD_T, FIELD_B, FIELD_L, FIELD_R, PLAY_W, CX, GOAL_W } from './world';
+import { GROUND_FRICTION, GRAVITY } from './ball';
+import { FIELD_T, FIELD_B, FIELD_L, FIELD_R, PLAY_W, PLAY_H, CX, GOAL_W, GOAL_HEIGHT, PEN_BOX_W } from './world';
 
 const AI_SPEED = PLAYER_SPEED * 0.94; // a touch slower than the human
 const SHOOT_RANGE = 130;
@@ -90,6 +90,12 @@ const DIVE_REACH_MIN = 6; // smaller offsets are covered just by standing/tracki
 const DIVE_REACH_MAX = 44; // beyond this the keeper can't get there — it's a goal
 const DIVE_FLIGHT_MIN = 0.34; // min airborne time — keeps the dive deliberate, low
 const DIVE_FLIGHT_MAX = 0.6; // cap so a far shot doesn't float forever
+const DIVE_RISE_MAX = 60; // extra upward launch to meet a high ball (px/s)
+
+// Claiming: a loose ball (or a cross dropping) this deep into his own box is
+// the keeper's — he attacks it instead of spectating from his line. Kept short
+// of the penalty spot so he never strays far from goal.
+const CLAIM_DEPTH = 34;
 
 function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
@@ -767,7 +773,44 @@ function holdAi(state: GameState, p: Player, dt: number): void {
   moveToward(p, tx, ty, dt, AI_SPEED * 0.92);
 }
 
-function gkAi(state: GameState, p: Player, dt: number): void {
+const GK_HOLD = 0.45; // seconds a keeper holds a catch before distributing
+const GK_THROW_SPEED = 245; // an outlet throw, not a shot
+
+// Distribute a gathered ball: a real outlet, not the old blind punt at the
+// centre circle — which served the ball straight back to the opposing
+// shooters and looped shot -> catch -> punt -> shot forever.
+function gkDistribute(state: GameState, p: Player): void {
+  const goalLine = ownGoalY(p);
+  const into = intoField(p);
+  let best: Player | null = null;
+  let bestScore = -Infinity;
+  for (const m of state.players) {
+    if (m.team !== p.team || m === p || m.role === 'gk' || m.sentOff || m.state === 'fallen') continue;
+    const d = Math.hypot(m.x - p.x, m.y - p.y);
+    if (d < 70) continue; // too close to our goal to be an outlet
+    if (!isFinite(ballTravelTime(d, GK_THROW_SPEED))) continue;
+    if (!passSafe(state, p.x, p.y, m.x, m.y, p.team, GK_THROW_SPEED)) continue;
+    // Open men on the flanks, further upfield, make the best outlets.
+    const open = nearestEnemyDist(state, m.x, m.y, p.team);
+    const score = Math.min(open, 60) + Math.abs(m.x - CX) * 0.25 + advanceOf(p, p.y, m.y) * 0.2;
+    if (score > bestScore) {
+      bestScore = score;
+      best = m;
+    }
+  }
+  if (best) {
+    kickToward(state, p, best.x, best.y, GK_THROW_SPEED, 55);
+    return;
+  }
+  // Nothing safe on: hoof it long up the LESS CROWDED flank — never the middle.
+  const upY = goalLine + into * PLAY_H * 0.72;
+  const lx = FIELD_L + 50;
+  const rx = FIELD_R - 50;
+  const tx = nearestEnemyDist(state, lx, upY, p.team) >= nearestEnemyDist(state, rx, upY, p.team) ? lx : rx;
+  kickToward(state, p, tx, upY, 315, 110);
+}
+
+export function gkAi(state: GameState, p: Player, dt: number): void {
   const b = state.ball;
 
   // Mid-dive: the keeper is airborne and committed — coast laterally under
@@ -778,43 +821,88 @@ function gkAi(state: GameState, p: Player, dt: number): void {
     return;
   }
 
-  // Cleared the ball if it ended up at the keeper's feet (caught a dive too).
+  // Gathered the ball (caught a dive too): hold it a beat like a real keeper,
+  // then distribute properly. (A human team's keeper only reaches this branch
+  // for a back-pass — otherwise the session hands his ball to the player to
+  // aim, SWOS-style.)
   if (state.carrier === p) {
     p.z = 0;
-    // Back-pass rule: a ball a teammate deliberately kicked (or threw) to the
-    // keeper may not be picked up — it has to be played by foot, so it goes
-    // back out as a low driven clearance instead of the caught-and-punted ball.
+    // Back-pass rule (#8): a ball a teammate deliberately kicked or threw to the
+    // keeper may not be picked up. It is played by foot straight away as a low
+    // driven clearance, never held and distributed.
     const backPass = b.lastKick !== null && b.lastKick.team === p.team && b.lastKick !== p;
     if (backPass) {
+      p.charging = false;
       kickToward(state, p, CX + (b.x < CX ? 40 : -40), MID_Y, 250, 0);
-    } else {
-      kickToward(state, p, CX + (b.x < CX ? 40 : -40), MID_Y, 300, 90);
+      return;
     }
+    if (!p.charging) {
+      p.charging = true; // (re)start the hold on a fresh catch
+      p.stateTimer = GK_HOLD;
+    }
+    const near = nearestOpponent(state, p);
+    if (p.stateTimer > 0 && near.d > 30) {
+      p.stateTimer = Math.max(0, p.stateTimer - dt);
+      p.vx = p.vy = 0;
+      return;
+    }
+    p.charging = false;
+    gkDistribute(state, p);
     return;
   }
+  p.charging = false; // not on the ball: any pending hold is void
   const lineY = ownGoalY(p) + (p.attacksTop ? -7 : 7);
 
-  // Dive at a low shot heading goalward that will cross the line offset from the
-  // keeper — too far to cover by tracking, but within a dive's reach.
+  // Dive at a shot heading goalward that will cross the line offset from the
+  // keeper — too far to cover by tracking, but within a dive's reach. Judged on
+  // the ball's PREDICTED height at the line: anything arriving under the bar
+  // is diveable (gating on the ball's current z left every shot that crossed
+  // above control height but under the bar unsavable).
   const towardGoal = p.attacksTop ? b.vy > 60 : b.vy < -60;
-  if (towardGoal && b.z < 12) {
+  if (towardGoal) {
     const t = (lineY - b.y) / b.vy; // time until the ball reaches the line
     if (t > 0 && t < DIVE_LOOKAHEAD) {
       const predX = b.x + b.vx * t;
-      const onTarget = Math.abs(predX - CX) < GOAL_W / 2 + 6;
+      // Height when it crosses; a negative prediction means it bounces first —
+      // treat that as a low ball.
+      const predZ = Math.max(0, b.z + b.vz * t - (GRAVITY * t * t) / 2);
+      const onTarget = Math.abs(predX - CX) < GOAL_W / 2 + 6 && predZ < GOAL_HEIGHT + 2;
       const offset = predX - p.x;
       if (onTarget && Math.abs(offset) > DIVE_REACH_MIN && Math.abs(offset) < DIVE_REACH_MAX) {
         const flight = clamp(t, DIVE_FLIGHT_MIN, DIVE_FLIGHT_MAX);
         p.state = 'gkdive';
         p.dir = offset > 0 ? Dir.R : Dir.L;
         // Reach the crossing point exactly as the ball arrives (capped), in a
-        // low arc that lands ~flight later — so the keeper meets the low ball
-        // instead of sailing past it.
+        // low arc that lands ~flight later; a high ball adds upward launch so
+        // the dive rises to meet it (the mid-air catch does the rest).
         p.vx = clamp(offset / t, -DIVE_SPEED, DIVE_SPEED);
         p.vy = 0;
-        p.vz = (GK_GRAVITY * flight) / 2;
+        p.vz = (GK_GRAVITY * flight) / 2 + clamp(predZ / t, 0, DIVE_RISE_MAX);
         return;
       }
+    }
+  }
+
+  // Claim a loose ball in his box: a cross dropping in, or a ball squirting
+  // free near goal, is attacked at full speed instead of watched from the
+  // line. Only when NO ONE has it on the toe (never charge a carrier — that's
+  // the dive/track game) and it's inside the box width, short of the spot.
+  if (state.carrier === null) {
+    const goalLine = ownGoalY(p);
+    const into = intoField(p);
+    // Where a flighted ball comes down; a rolling ball is taken where it is.
+    let cx2 = b.x;
+    let cy2 = b.y;
+    if (b.z > 4) {
+      const tLand = (b.vz + Math.sqrt(b.vz * b.vz + 2 * GRAVITY * b.z)) / GRAVITY;
+      cx2 += b.vx * tLand;
+      cy2 += b.vy * tLand;
+    }
+    const depth = (cy2 - goalLine) * into;
+    if (depth > -4 && depth < CLAIM_DEPTH && Math.abs(cx2 - CX) < PEN_BOX_W / 2 - 8) {
+      const ty2 = clamp((cy2 - goalLine) * into, 2, CLAIM_DEPTH);
+      moveToward(p, clamp(cx2, CX - PEN_BOX_W / 2 + 8, CX + PEN_BOX_W / 2 - 8), goalLine + into * ty2, dt, AI_SPEED, 1);
+      return;
     }
   }
 

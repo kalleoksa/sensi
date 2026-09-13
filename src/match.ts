@@ -101,9 +101,10 @@ const FK_LOB = 55;
 const CK_MIN = 195; // corner cross
 const CK_MAX = 280;
 const CK_LOB = 105; // lofted into the box
-const GK_MIN = 225; // goal kick — a short ball out at min, a long punt at full hold
-const GK_MAX = 340;
-const GK_LOB = 110; // lofted clearance
+const GK_MIN = 155; // goal kick / keeper throw — a short ball out at min hold
+const GK_MAX = 315; // a long punt at full hold
+const GK_LOB_MIN = 28; // flat short throw...
+const GK_LOB_MAX = 105; // ...up to a lofted clearance (scales with the charge)
 
 function clampf(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
@@ -604,7 +605,7 @@ export function deliverRestartAimed(state: GameState, match: Match): void {
     lob = FK_LOB;
   } else if (a.kind === 'goalkick') {
     power = GK_MIN + frac * (GK_MAX - GK_MIN);
-    lob = GK_LOB;
+    lob = GK_LOB_MIN + frac * (GK_LOB_MAX - GK_LOB_MIN); // tap = flat throw, hold = punt
   } else {
     power = CK_MIN + frac * (CK_MAX - CK_MIN);
     lob = CK_LOB;

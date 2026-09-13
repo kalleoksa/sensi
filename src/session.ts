@@ -5,8 +5,15 @@
 
 import { VIEW_W, VIEW_H, makeCamera, updateCamera, FIELD_T, FIELD_B, CX } from './world';
 import { consumeInputs, clearGameplayEdges } from './input';
-import { makeBall, stepBall, setPitch } from './ball';
-import { controlHuman, resolvePossession, resolveSlideTackles, resolveHeaders } from './player';
+import { makeBall, stepBall, setPitch, GROUND_FRICTION } from './ball';
+import {
+  controlHuman,
+  resolvePossession,
+  resolveSlideTackles,
+  resolveHeaders,
+  resolveKeeperSaves,
+  PLAYER_SPEED,
+} from './player';
 import { makeMatch, updateMatch, startMatch, aimRestart, deliverRestartAimed, type Match } from './match';
 import { makeTeams } from './team';
 import { updateTeamAi, coastPlayers, positionForRestart } from './ai';
@@ -36,19 +43,37 @@ export interface Session {
   paused: boolean;
 }
 
-// Each human drives their team's player nearest the ball (carrier if their team
-// has it). A little stickiness avoids flicker when two are equidistant.
+// Where the ball will be after t seconds: rolling under ground friction, or in
+// flight (air drag is negligible for this estimate). Used to hand control to
+// the player nearest the ball's PATH, not its current spot — picking by current
+// position kept selecting players a fast pass had already gone past.
+function ballPosAt(s: GameState, t: number): { x: number; y: number } {
+  const b = s.ball;
+  const f = b.z > 0.5 ? t : (1 - Math.exp(-GROUND_FRICTION * t)) / GROUND_FRICTION;
+  return { x: b.x + b.vx * f, y: b.y + b.vy * f };
+}
+
+// Each human drives their team's player best placed to meet the ball (carrier
+// if their team has it): distance is measured to where the ball will be by the
+// time that player could reach it. A little stickiness avoids flicker when two
+// are equidistant.
 function pickControlled(s: GameState, team: 0 | 1, current: Player | null): Player {
   const b = s.ball;
   if (s.carrier && s.carrier.team === team && s.carrier.role !== 'gk') return s.carrier;
+  const distTo = (p: Player): number => {
+    const now = Math.hypot(p.x - b.x, p.y - b.y);
+    const tau = Math.min(now / PLAYER_SPEED, 0.7); // time he'd need to get there
+    const at = ballPosAt(s, tau);
+    return Math.hypot(p.x - at.x, p.y - at.y);
+  };
   let best: Player | null = current;
   let bestD =
     current && current.team === team && current.role !== 'gk'
-      ? Math.hypot(current.x - b.x, current.y - b.y) * 0.8 // stickiness factor
+      ? distTo(current) * 0.8 // stickiness factor
       : Infinity;
   for (const p of s.players) {
     if (p.team !== team || p.role === 'gk') continue;
-    const d = Math.hypot(p.x - b.x, p.y - b.y);
+    const d = distTo(p);
     if (d < bestD) {
       bestD = d;
       best = p;
@@ -161,6 +186,43 @@ export function stepSession(s: Session, dt: number): void {
   // Freeze player control during the post-goal pause, but keep the ball rolling
   // so it travels into the net during the goal celebration.
   if (match.phase === 'play') {
+    // A human team's keeper who has gathered the ball distributes it BY HAND
+    // (SWOS-style): the same aim-and-charge set piece as a goal kick — stick
+    // aims, hold action for power — instead of an auto-punt to nowhere.
+    // A back-pass (a teammate's deliberate kick) may not be picked up, so it is
+    // left to the keeper AI, which clears it by foot.
+    const kc = state.carrier;
+    const lk = state.ball.lastKick;
+    const backPass = kc !== null && lk !== null && lk.team === kc.team && lk !== kc;
+    if (kc && kc.role === 'gk' && match.humanTeams[kc.team] && !backPass) {
+      const b = state.ball;
+      b.x = kc.x;
+      b.y = kc.y;
+      b.z = 0;
+      b.vx = b.vy = b.vz = b.spin = 0;
+      b.aftertouch = 0;
+      b.controlLock = 99; // dead in his hands until delivered
+      b.owner = kc;
+      state.carrier = null;
+      kc.vx = kc.vy = 0;
+      kc.z = 0;
+      kc.state = 'idle';
+      match.phase = 'dead';
+      match.deadTimer = 0;
+      match.deadReset = false;
+      match.restart = null;
+      match.awaitRestart = {
+        taker: kc,
+        team: kc.team,
+        kind: 'goalkick',
+        dx: 0,
+        dy: kc.attacksTop ? -1 : 1, // default: up the pitch
+        t: 0,
+        charge: 0,
+        charging: false,
+      };
+      return;
+    }
     if (config.controlMode === 'cpu') {
       // Watch mode: no humans, AI drives everyone (both controlled slots null).
       state.controlled = null;
@@ -177,6 +239,7 @@ export function stepSession(s: Session, dt: number): void {
     }
     updateTeamAi(state, dt);
     resolveSlideTackles(state);
+    resolveKeeperSaves(state); // before headers: the keeper's ball beats a leap
     resolveHeaders(state);
     resolvePossession(state, dt);
   } else if (
