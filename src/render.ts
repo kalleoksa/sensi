@@ -212,7 +212,7 @@ export function makeRenderer(
     );
 
     // 5. HUD: shot power bar above the charging player's head.
-    const human = state.players.find((p) => p.isHuman && p.charging);
+    const human = [state.controlled, state.controlled2].find((p) => p && p.charging);
     if (human) {
       const frac = Math.min(1, human.charge / 0.7);
       const hx = Math.round(lerp(human.prevX, human.x, alpha) - cam.x) - 6;

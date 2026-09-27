@@ -15,7 +15,7 @@ import type { InputFrame } from './input';
 import { applyAftertouch } from './ball';
 import { emitSfx } from './audio';
 import { type RGB } from './sprites/palette';
-import { WORLD_W, WORLD_H, FIELD_T, FIELD_B, FIELD_L, FIELD_R, CX } from './world';
+import { WORLD_W, WORLD_H, FIELD_T, FIELD_B, FIELD_L, FIELD_R, CX, GOAL_HEIGHT, PEN_BOX_W, PEN_BOX_D } from './world';
 
 export const PLAYER_SPEED = 72; // px/s; ~10s goal-to-goal over the 720px pitch
 const SLIDE_SPEED = 126; // 1.75x run speed, trimmed with PLAYER_SPEED
@@ -30,6 +30,10 @@ const DRIBBLE_SPRING = 11; // how hard the ball is held to the lead point
 const TACKLE_R = 8; // an opponent this close to the carrier pokes the ball loose
 const SLIDE_BALL_R = 26; // a sliding lunge (legs out) within this of the ball wins it
 const SLIDE_HIT_R = 8; // a slide within this of an opponent makes contact
+// A keeper uses his hands in his own box: he can claim a ball up to just over
+// the bar (plus however high a dive has lifted him), and a caught ball can't be
+// poked out of his hands.
+const GK_REACH_Z = GOAL_HEIGHT + 2;
 
 // Standing tackle (a quick on-feet poke) vs the committed slide: tap the action
 // button to poke, hold it past SLIDE_HOLD to commit to a slide.
@@ -246,6 +250,7 @@ function strike(state: GameState, p: Player, charge: number): void {
   b.controlLock = CONTROL_LOCK;
   b.owner = p;
   b.lastKick = p;
+  b.keeperBeaten = false;
   p.state = 'kick';
   p.stateTimer = KICK_LOCK;
   emitSfx(tap ? 'pass' : 'shot', tap ? 0.8 : clamp(speed / SHOT_MAX, 0.6, 1));
@@ -271,15 +276,27 @@ export function resolvePossession(state: GameState, dt: number): void {
     b.x < FIELD_L || b.x > FIELD_R || (tCross >= 0 && tCross < OUT_HORIZON);
   let best: Player | null = null;
   let bestD = CONTROL_R;
-  if (!crossingTouch && b.controlLock <= 0 && b.z < 4) {
+  if (!crossingTouch) {
+    const inField = b.y >= FIELD_T && b.y <= FIELD_B;
     for (const p of state.players) {
       if (p.state === 'fallen' || p.sentOff) continue;
+      // The post-kick lock stops the kicker re-collecting his own ball; a keeper
+      // may still save someone else's shot the instant it is struck.
+      const saving = inField && b.owner !== p && keeperHands(p);
+      if (b.controlLock > 0 && !saving) continue;
+      if (p.role === 'gk' && b.keeperBeaten) continue;
+      const reachZ = keeperHands(p) ? GK_REACH_Z + p.z : 4;
+      if (b.z >= reachZ) continue;
       const d = Math.hypot(p.x - b.x, p.y - b.y);
       if (d < bestD) {
         bestD = d;
         best = p;
       }
     }
+  }
+  if (best && best.role === 'gk' && !keeperHolds(state, best)) {
+    state.carrier = null;
+    return;
   }
   state.carrier = best;
   if (!best) return;
@@ -290,6 +307,7 @@ export function resolvePossession(state: GameState, dt: number): void {
   // nearest presser, to apply pressure to the carrier's touch below.
   let pressDist = Infinity;
   for (const o of state.players) {
+    if (keeperHands(best)) break; // ball in the keeper's hands: no poking it out
     if (o.team === best.team || o.state === 'fallen' || o.sentOff) continue;
     const d = Math.hypot(o.x - best.x, o.y - best.y);
     if (d < pressDist) pressDist = d;
@@ -319,6 +337,41 @@ export function resolvePossession(state: GameState, dt: number): void {
   b.vy = best.vy + (leadY - b.y) * DRIBBLE_SPRING;
   b.owner = best;
   void dt;
+}
+
+// A keeper reaching an opponent's shot doesn't always hold it: the harder and
+// higher the shot, the likelier it is parried away or beats him outright. Slow
+// balls and passes are always gathered. Returns true if he holds the ball.
+const SAVE_SPEED = 150; // below this the ball is simply collected
+function keeperHolds(state: GameState, gk: Player): boolean {
+  const b = state.ball;
+  const speed = Math.hypot(b.vx, b.vy);
+  if (speed < SAVE_SPEED || !b.owner || b.owner.team === gk.team) return true;
+  const pace = clamp((speed - SAVE_SPEED) / (SHOT_MAX - SAVE_SPEED), 0, 1);
+  const hold = clamp(0.85 - 0.45 * pace - (b.z > 8 ? 0.15 : 0), 0.2, 0.85);
+  const r = state.rng.next();
+  if (r < hold) return true;
+  if (r < hold + (1 - hold) * 0.55) {
+    // Parry: the ball comes back off him, slower and sprayed wide.
+    const out = gk.attacksTop ? -1 : 1; // away from his own goal
+    b.vx = state.rng.range(-1, 1) * speed * 0.35;
+    b.vy = out * speed * 0.3;
+    b.vz = Math.max(b.vz, 30);
+    b.owner = gk;
+    b.lastKick = null;
+    b.controlLock = 0.2;
+    emitSfx('tackle', 0.6);
+  } else {
+    b.keeperBeaten = true; // wrong-footed: the shot goes past him
+  }
+  return false;
+}
+
+// Whether a keeper is inside his own penalty box (where he may handle).
+function keeperHands(p: Player): boolean {
+  if (p.role !== 'gk') return false;
+  const goalLine = p.attacksTop ? FIELD_B : FIELD_T;
+  return Math.abs(p.x - CX) < PEN_BOX_W / 2 && Math.abs(p.y - goalLine) < PEN_BOX_D;
 }
 
 // Headers: a ball flying at head height near an outfielder gets nodded on. An
@@ -369,6 +422,7 @@ export function resolveHeaders(state: GameState): void {
   b.controlLock = 0.2;
   b.owner = best;
   b.lastKick = null; // a header isn't a kick — the keeper may still pick it up
+  b.keeperBeaten = false;
 
   best.dir = dirFromVec(dx, dy);
   best.state = 'header';
@@ -384,7 +438,7 @@ export function resolveHeaders(state: GameState): void {
 export function resolveSlideTackles(state: GameState): void {
   const b = state.ball;
   for (const s of state.players) {
-    if (s.state !== 'slide') continue;
+    if (s.state !== 'slide' || s.sentOff) continue;
     const wonBall = Math.hypot(s.x - b.x, s.y - b.y) < SLIDE_BALL_R;
     for (const o of state.players) {
       if (o.team === s.team || o === s || o.state === 'fallen' || o.sentOff) continue;
@@ -561,6 +615,7 @@ export function kickToward(
   b.controlLock = 0.22;
   b.owner = p;
   b.lastKick = p;
+  b.keeperBeaten = false;
   p.dir = dirFromVec(fx, fy);
   p.state = 'kick';
   p.stateTimer = KICK_LOCK;

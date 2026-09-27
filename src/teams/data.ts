@@ -96,6 +96,29 @@ export function goalkeeperKits(homeShirt: RGB, awayShirt: RGB): { home: Kit; awa
   };
 }
 
+// Change strip for an away side whose shirt would clash with the home shirt:
+// first the reversed kit (shorts colour on the shirt), else the stock colour
+// furthest from both the home shirt and the grass.
+const KIT_CLASH = 110 * 110; // squared RGB distance below which two shirts read alike
+const CHANGE_COLORS: RGB[] = [WHITE, BLACK, RED, rgb(40, 110, 200), YELLOW, rgb(120, 40, 140)];
+
+export function awayKit(home: Kit, away: Kit): Kit {
+  const clashes = (c: RGB): boolean =>
+    colorDist2(c, home.shirt) < KIT_CLASH || colorDist2(c, PITCH_TONE) < KIT_CLASH;
+  if (!clashes(away.shirt)) return away;
+  if (!clashes(away.shorts)) return { shirt: away.shorts, shorts: away.shirt, socks: away.shorts };
+  let best = CHANGE_COLORS[0];
+  let bestD = -1;
+  for (const c of CHANGE_COLORS) {
+    const d = Math.min(colorDist2(c, home.shirt), colorDist2(c, PITCH_TONE));
+    if (d > bestD) {
+      bestD = d;
+      best = c;
+    }
+  }
+  return { shirt: best, shorts: away.shorts, socks: best };
+}
+
 export const TEAMS: TeamDef[] = [
   // --- Europe (UEFA: 16 at WC26, + Italy/Ireland who didn't qualify) ---
   { id: 'eng', name: 'ENGLAND', short: 'ENG', continent: 'EUROPE', group: 'L', kit: { shirt: WHITE, shorts: hx('#0A285F'), socks: WHITE } },

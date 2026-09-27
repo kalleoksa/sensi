@@ -1,6 +1,7 @@
 // Shared entity/state types. Plain data; behavior lives in ball.ts / player.ts / ai.ts.
 
 import type { RGB } from './sprites/palette';
+import type { Rng } from './rng';
 import type { Camera } from './world';
 
 // 8-way direction. 0=Up, clockwise.
@@ -126,6 +127,9 @@ export interface Ball {
   // rule: a keeper may not pick up a ball a teammate kicked to him.
   lastKick: Player | null;
   aftertouch: number; // seconds remaining in the aftertouch window
+  // Set when the keeper failed to hold this shot (it beat him): he can't claim
+  // it again until someone next kicks or heads the ball.
+  keeperBeaten: boolean;
   controlLock: number; // seconds before a player may re-take possession
 }
 
@@ -149,6 +153,9 @@ export interface GameState {
   teamSlideCd: [number, number];
   // The on-pitch referee (trails play; brandishes cards at fouls).
   referee: Referee;
+  // Match PRNG: the only source of in-play variation (AI shot placement), so a
+  // given seed replays identically but different matches play out differently.
+  rng: Rng;
   // Set while positioning a restart that has no offside (throw-in): the support
   // calculator then lets attackers position beyond the last defender.
   suppressOffside?: boolean;

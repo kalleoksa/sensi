@@ -13,7 +13,7 @@ import {
   PLAY_H,
 } from './world';
 import { HAIR_DARK, HAIR_BLOND, HAIR_GINGER, type RGB } from './sprites/palette';
-import { type TeamDef, type Kit, goalkeeperKits } from './teams/data';
+import { type TeamDef, type Kit, goalkeeperKits, awayKit } from './teams/data';
 import { FORMATIONS, type FormationId, type Slot } from './formations';
 
 const HAIRS: RGB[] = [HAIR_DARK, HAIR_DARK, HAIR_BLOND, HAIR_GINGER];
@@ -32,9 +32,9 @@ export function homeForSlot(
   return { x, y };
 }
 
-function makeTeam(team: 0 | 1, def: TeamDef, slots: Slot[], rng: Rng, gkKit: Kit): Player[] {
+function makeTeam(team: 0 | 1, outfieldKit: Kit, slots: Slot[], rng: Rng, gkKit: Kit): Player[] {
   return slots.map((slot) => {
-    const kit = slot.role === 'gk' ? gkKit : def.kit;
+    const kit = slot.role === 'gk' ? gkKit : outfieldKit;
     // Half-1 placement: team 0 attacks the top, team 1 the bottom.
     const home = homeForSlot(slot.x, slot.y, team === 0);
     const init: PlayerInit = {
@@ -70,9 +70,10 @@ export function makeTeams(
 ): Player[] {
   // Stock keeper kits picked to contrast both shirts + the pitch (FIFA-style);
   // a team's explicit gkKit overrides the auto pick.
-  const gk = goalkeeperKits(home.kit.shirt, away.kit.shirt);
+  const away2 = awayKit(home.kit, away.kit); // change strip on a colour clash
+  const gk = goalkeeperKits(home.kit.shirt, away2.shirt);
   return [
-    ...makeTeam(0, home, FORMATIONS[homeFormation], rng, home.gkKit ?? gk.home),
-    ...makeTeam(1, away, FORMATIONS[awayFormation], rng, away.gkKit ?? gk.away),
+    ...makeTeam(0, home.kit, FORMATIONS[homeFormation], rng, home.gkKit ?? gk.home),
+    ...makeTeam(1, away2, FORMATIONS[awayFormation], rng, away.gkKit ?? gk.away),
   ];
 }

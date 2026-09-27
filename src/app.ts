@@ -289,6 +289,7 @@ export function makeApp(deps: AppDeps): App {
       awayFormation,
       halfLength: MATCH_LENGTHS[options.lengthIndex].half,
       pitch: PITCHES[options.pitchIndex],
+      seed: Date.now() >>> 0,
     });
     sessionKind = pendingSessionKind;
     clearActionEdges(); // don't let the confirming keypress leak in as a kick
