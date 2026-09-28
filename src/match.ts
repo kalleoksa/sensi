@@ -152,6 +152,7 @@ export function resetKickoff(state: GameState): void {
   b.controlLock = 0;
   b.owner = null;
   b.lastKick = null;
+  b.keeperBeaten = false;
   for (const p of state.players) {
     if (p.sentOff) continue; // stays off the pitch, a man down
     p.x = p.homeX;
@@ -204,6 +205,7 @@ export function beginKickoff(state: GameState, match: Match, kickoffTeam: 0 | 1)
 export function setupHalf(state: GameState, match: Match, half: 1 | 2, kickoffTeam: 0 | 1): void {
   match.half = half;
   match.clock = match.halfLength;
+  state.foul = null; // a foul on the final whistle doesn't carry into the next half
   for (const p of state.players) {
     p.attacksTop = attacksTop(p.team, half);
     const home = homeForSlot(p.slotX, p.slotY, p.attacksTop);
@@ -229,6 +231,7 @@ function resetPlayerForMatch(p: Player): void {
   p.charge = 0;
   p.bufferedTap = 0;
   p.pokeTimer = 0;
+  p.beatenTimer = 0;
   p.slideCooldown = 0;
   p.yellow = false;
   p.sentOff = false; // back on the pitch for the new match
@@ -296,7 +299,9 @@ function placeRestart(
   b.controlLock = RESTART_LOCK; // dead until delivered
   b.owner = null;
   b.lastKick = null;
+  b.keeperBeaten = false;
   state.carrier = null;
+  match.outBall = null;
 
   // Goal kicks are taken by the keeper; everything else by the nearest
   // outfielder of the restart team.
@@ -328,7 +333,7 @@ function placeRestart(
     taker.x = x < CX ? FIELD_L - 2 : FIELD_R + 2;
     taker.y = y;
   } else {
-    const behind = team === 0 ? 5 : -5;
+    const behind = taker.attacksTop ? 5 : -5; // own side of the ball this half
     taker.x = Math.max(FIELD_L + 2, Math.min(FIELD_R - 2, x));
     taker.y = Math.max(FIELD_T + 2, Math.min(FIELD_B - 2, y + behind));
   }
@@ -433,7 +438,9 @@ function placePenalty(state: GameState, match: Match, team: 0 | 1): void {
   b.controlLock = RESTART_LOCK;
   b.owner = null;
   b.lastKick = null;
+  b.keeperBeaten = false;
   state.carrier = null;
+  match.outBall = null;
 
   // Taker: nearest outfielder of the awarded team, stood just behind the ball.
   let taker: Player | null = null;
@@ -468,6 +475,16 @@ function placePenalty(state: GameState, match: Match, team: 0 | 1): void {
     }
   }
 
+  const gk = state.players.find((p) => p.team !== team && p.role === 'gk' && !p.sentOff);
+  if (gk) {
+    gk.x = CX;
+    gk.y = goalLine + into * 7;
+    gk.prevX = gk.x;
+    gk.prevY = gk.y;
+    gk.vx = gk.vy = 0;
+    gk.state = 'idle';
+  }
+
   match.phase = 'dead';
   match.deadTimer = RESTART_DEAD;
   match.deadReset = false;
@@ -488,10 +505,10 @@ function judgeCard(
 ): 'yellow' | 'red' | null {
   const off = foul.offender;
   const ownGoal = attacksTop(off.team, match.half) ? FIELD_B : FIELD_T;
-  // A foul in a dangerous area is a booking: a conceded penalty, or a foul in
-  // the offender's own half (a cynical stop while defending).
+  // A foul in a dangerous area is a booking: a conceded penalty, or bringing
+  // down the carrier in the offender's own half (a cynical stop while defending).
   const ownHalf = Math.abs(foul.y - ownGoal) < (FIELD_B - FIELD_T) / 2;
-  const bookable = isPenalty || ownHalf;
+  const bookable = isPenalty || (ownHalf && foul.deniedAttack);
   if (!bookable) return null;
 
   if (off.yellow) {
@@ -635,7 +652,7 @@ function deliverRestart(state: GameState, match: Match): void {
   for (const m of state.players) {
     if (m.team !== t.team || m === t || m.role === 'gk' || m.sentOff) continue;
     const d = Math.hypot(m.x - b.x, m.y - b.y);
-    const adv = t.team === 0 ? m.y - b.y : b.y - m.y; // negative = ahead
+    const adv = t.attacksTop ? m.y - b.y : b.y - m.y; // negative = ahead
     const score = d + adv * 0.4;
     if (d > 14 && score < bestScore) {
       bestScore = score;
@@ -658,12 +675,14 @@ function deliverRestart(state: GameState, match: Match): void {
   } else if (r.kind === 'penalty') {
     // Spot kick: drive it low into a corner of the goal; the keeper dives.
     const goalLine = attacksTop(t.team, match.half) ? FIELD_T : FIELD_B;
-    const side = t.x <= CX ? 1 : -1; // aim across goal, away from the run-up lean
+    // Pick a corner. The taker always stands at CX, so vary it off the clock
+    // (deterministic, but not the same side every time).
+    const side = Math.floor(match.clock * 7) % 2 === 0 ? 1 : -1;
     kickToward(state, t, CX + side * (GOAL_W / 2 - 3), goalLine, 360, 24);
   } else {
     // Free kick: play it forward to the best teammate, else upfield toward the
     // opponent goal the taker attacks.
-    const fwd = t.team === 0 ? FIELD_T + 100 : FIELD_B - 100;
+    const fwd = t.attacksTop ? FIELD_T + 100 : FIELD_B - 100;
     const tx = target ? target.x : CX;
     const ty = target ? target.y : fwd;
     kickToward(state, t, tx, ty, 235, 70);
@@ -812,7 +831,20 @@ export function updateMatch(state: GameState, match: Match, dt: number): void {
     return;
   }
 
-  const inGoalMouth = Math.abs(b.x - CX) < GOAL_W / 2;
+  // Judge the goal where the ball actually crossed the line this step, not
+  // where it ended up (a rising shot can cross under the bar and finish the
+  // step above it; a curling one can cross inside the post and end outside).
+  let lineX = b.x;
+  let lineZ = b.z;
+  const crossed =
+    (b.prevY >= FIELD_T && b.y < FIELD_T) || (b.prevY <= FIELD_B && b.y > FIELD_B);
+  if (crossed) {
+    const lineY = b.y < FIELD_T ? FIELD_T : FIELD_B;
+    const f = (lineY - b.prevY) / (b.y - b.prevY);
+    lineX = b.prevX + (b.x - b.prevX) * f;
+    lineZ = b.prevZ + (b.z - b.prevZ) * f;
+  }
+  const inGoalMouth = Math.abs(lineX - CX) < GOAL_W / 2;
   const inset = 3; // place restarts this far inside the line
 
   // Which team attacks each goal this half (teams swap ends in half 2).
@@ -822,7 +854,7 @@ export function updateMatch(state: GameState, match: Match, dt: number): void {
   // --- Goal lines (top / bottom) ---
   if (b.y < FIELD_T || b.y > FIELD_B) {
     const top = b.y < FIELD_T;
-    if (inGoalMouth && b.z < GOAL_HEIGHT) {
+    if (inGoalMouth && lineZ < GOAL_HEIGHT) {
       // The team attacking this goal scores.
       scoreGoal(state, match, top ? topTeam : bottomTeam);
       return;

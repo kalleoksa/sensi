@@ -16,10 +16,10 @@
 import { Dir, type GameState, type Player } from './state';
 import { moveToward, kickToward, integrate, startSlideToward, PLAYER_SPEED } from './player';
 import { GROUND_FRICTION } from './ball';
-import { FIELD_T, FIELD_B, FIELD_L, FIELD_R, PLAY_W, CX, GOAL_W } from './world';
+import { FIELD_T, FIELD_B, FIELD_L, FIELD_R, PLAY_W, CX, GOAL_W, GOAL_HEIGHT } from './world';
 
 const AI_SPEED = PLAYER_SPEED * 0.94; // a touch slower than the human
-const SHOOT_RANGE = 130;
+const SHOOT_RANGE = 150;
 const FORWARD_PROGRESS_MIN = 25; // a safe forward pass gaining this much is worth taking
 const RELEASE_DIST = 16; // defender this close => about to tackle, release the ball now
 const BAIL_MAX_BACK = 25; // a release pass may not go more than this far backwards
@@ -32,7 +32,7 @@ const PASS_EVAL_SPEED = 215;
 const SHOT_EVAL_SPEED = 360;
 const MIN_PASS_DIST = 24; // shorter than this isn't worth a pass
 const PASS_LEAD_TIME = 0.35; // seconds of the receiver's run to lead a pass into
-const INTERCEPT_PAD = 8; // player+ball radii: opponent this close to the lane intercepts
+const INTERCEPT_PAD = 13; // = CONTROL_R: an opponent this close to the lane takes the ball
 
 // SupportSpotCalculator (Buckland "Simple Soccer"): a grid of candidate spots,
 // each scored on how OPEN it is (distance to the nearest defender — this is what
@@ -138,7 +138,7 @@ function nearestOpponent(state: GameState, p: Player): { opp: Player | null; d: 
   let opp: Player | null = null;
   let best = Infinity;
   for (const q of state.players) {
-    if (q.team === p.team) continue;
+    if (q.team === p.team || q.sentOff) continue;
     const d = Math.hypot(q.x - p.x, q.y - p.y);
     if (d < best) {
       best = d;
@@ -153,7 +153,7 @@ function nearestOpponent(state: GameState, p: Player): { opp: Player | null; d: 
 function nearestEnemyDist(state: GameState, x: number, y: number, team: 0 | 1): number {
   let best = Infinity;
   for (const q of state.players) {
-    if (q.team === team) continue;
+    if (q.team === team || q.sentOff) continue;
     const d = Math.hypot(q.x - x, q.y - y);
     if (d < best) best = d;
   }
@@ -191,7 +191,7 @@ function passSafe(
   const ux = dx / passDist;
   const uy = dy / passDist;
   for (const q of state.players) {
-    if (q.team === team) continue;
+    if (q.team === team || q.sentOff) continue;
     if (excludeGk && q.role === 'gk') continue;
     const ox = q.x - fromX;
     const oy = q.y - fromY;
@@ -281,7 +281,7 @@ function assignMarks(state: GameState, team: 0 | 1): void {
   const markers = state.players.filter((p) => p.team === team && p.duty === 'mark');
   if (markers.length === 0) return;
   const goalY = ownGoalY(markers[0]);
-  const opps = state.players.filter((p) => p.team !== team && p.role !== 'gk');
+  const opps = state.players.filter((p) => p.team !== team && p.role !== 'gk' && !p.sentOff);
   opps.sort((a, c) => Math.abs(a.y - goalY) - Math.abs(c.y - goalY));
 
   const taken = new Set<Player>();
@@ -607,7 +607,7 @@ function bestPass(state: GameState, p: Player): PassOption | null {
   let best: PassOption | null = null;
   let bestScore = -Infinity;
   for (const m of state.players) {
-    if (m.team !== p.team || m === p || m.role === 'gk') continue;
+    if (m.team !== p.team || m === p || m.role === 'gk' || m.sentOff) continue;
     const advance = advanceOf(p, p.y, m.y);
     if (advance < 4) continue; // only forward-ish balls
     const passDist = Math.hypot(m.x - p.x, m.y - p.y);
@@ -632,7 +632,7 @@ function safestPass(state: GameState, p: Player): Player | null {
   let best: Player | null = null;
   let bestScore = -Infinity;
   for (const m of state.players) {
-    if (m.team !== p.team || m === p || m.role === 'gk') continue;
+    if (m.team !== p.team || m === p || m.role === 'gk' || m.sentOff) continue;
     const advance = advanceOf(p, p.y, m.y);
     if (advance < -BAIL_MAX_BACK) continue; // don't recycle deep backwards
     const passDist = Math.hypot(m.x - p.x, m.y - p.y);
@@ -649,21 +649,49 @@ function safestPass(state: GameState, p: Player): Player | null {
   return best;
 }
 
+// Where across the goal mouth an AI shot is aimed: anywhere inside the posts,
+// so the keeper has to read it (a shot always at CX is saved or scored every
+// time depending only on where he happens to stand).
+function shotX(state: GameState): number {
+  return CX + state.rng.range(-1, 1) * (GOAL_W / 2 - 4);
+}
+
+// An aim point across the goal mouth with a clear lane (keeper excluded), tried
+// in random order so the AI doesn't always pick the same corner; null if every
+// lane is blocked.
+function openShotX(state: GameState, p: Player, goalY: number): number | null {
+  const spots = [-0.8, -0.4, 0, 0.4, 0.8].map((f) => CX + f * (GOAL_W / 2 - 4));
+  for (let i = spots.length - 1; i > 0; i--) {
+    const j = state.rng.int(0, i);
+    [spots[i], spots[j]] = [spots[j], spots[i]];
+  }
+  for (const x of spots) {
+    if (!passSafe(state, p.x, p.y, x, goalY, p.team, SHOT_EVAL_SPEED, true)) continue;
+    // A weaker side snatches more shots wide of the post.
+    if (state.rng.next() < 0.5 * (1 - p.skill)) return x + Math.sign(x - CX || 1) * GOAL_W * 0.4;
+    return x;
+  }
+  return null;
+}
+
 function carrierAi(state: GameState, p: Player, dt: number): void {
   const goalY = attackGoalY(p);
   const dGoal = Math.hypot(CX - p.x, goalY - p.y);
   const fs = p.attacksTop ? -1 : 1;
 
   // 1) Shoot if in range with a clear lane (beating the keeper).
-  if (dGoal < SHOOT_RANGE && passSafe(state, p.x, p.y, CX, goalY, p.team, SHOT_EVAL_SPEED, true)) {
-    kickToward(state, p, CX, goalY, SHOT_EVAL_SPEED, 70);
-    return;
+  if (dGoal < SHOOT_RANGE) {
+    const aim = openShotX(state, p, goalY);
+    if (aim !== null) {
+      kickToward(state, p, aim, goalY, SHOT_EVAL_SPEED, state.rng.range(20, 80));
+      return;
+    }
   }
 
   // 1b) Tight to goal with no clear lane: shoot anyway — a blocked/saved shot
   //     beats dribbling the ball over the byline.
   if (dGoal < SHOOT_RANGE * 0.55) {
-    kickToward(state, p, CX, goalY, SHOT_EVAL_SPEED, 40);
+    kickToward(state, p, shotX(state), goalY, SHOT_EVAL_SPEED, state.rng.range(10, 50));
     return;
   }
 
@@ -797,7 +825,7 @@ function gkAi(state: GameState, p: Player, dt: number): void {
   // Dive at a low shot heading goalward that will cross the line offset from the
   // keeper — too far to cover by tracking, but within a dive's reach.
   const towardGoal = p.attacksTop ? b.vy > 60 : b.vy < -60;
-  if (towardGoal && b.z < 12) {
+  if (towardGoal && b.z < GOAL_HEIGHT) {
     const t = (lineY - b.y) / b.vy; // time until the ball reaches the line
     if (t > 0 && t < DIVE_LOOKAHEAD) {
       const predX = b.x + b.vx * t;

@@ -193,3 +193,26 @@ describe('world cup', () => {
     for (let i = 1; i < knockout.length; i++) expect(knockout[i]).toBe(knockout[i - 1] / 2);
   });
 });
+
+describe('simulated results', () => {
+  it('favour the stronger side', () => {
+    // A 52-team league: every pair meets once, so each side plays 51 games.
+    const comp = makeCompetition('league', [...TEAMS], TEAMS[0], 99);
+    while (!comp.done) {
+      if (yourFixture(comp)) recordYourResult(comp, 1, 1);
+      simRound(comp);
+      advance(comp);
+    }
+    const gd = new Map<string, number>();
+    for (const round of comp.rounds) {
+      for (const f of round) {
+        gd.set(f.a.id, (gd.get(f.a.id) ?? 0) + f.sa - f.sb);
+        gd.set(f.b.id, (gd.get(f.b.id) ?? 0) + f.sb - f.sa);
+      }
+    }
+    const top = TEAMS.filter((t) => t.rating >= 88 && t !== comp.you);
+    const bottom = TEAMS.filter((t) => t.rating <= 55);
+    for (const t of top) expect(gd.get(t.id)!, t.name).toBeGreaterThan(0);
+    for (const t of bottom) expect(gd.get(t.id)!, t.name).toBeLessThan(0);
+  });
+});

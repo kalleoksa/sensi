@@ -289,6 +289,7 @@ export function makeApp(deps: AppDeps): App {
       awayFormation,
       halfLength: MATCH_LENGTHS[options.lengthIndex].half,
       pitch: PITCHES[options.pitchIndex],
+      seed: Date.now() >>> 0,
     });
     sessionKind = pendingSessionKind;
     clearActionEdges(); // don't let the confirming keypress leak in as a kick
@@ -742,6 +743,7 @@ export function makeApp(deps: AppDeps): App {
         const sw = 3 * 16 + 2 * 5;
         drawSwatch(team.kit, Math.round((VIEW_W - sw) / 2), VIEW_H - 64);
         drawTextCentered(ctx, team.name, 0, VIEW_W, VIEW_H - 38, DEFAULT_STYLE.on, 1);
+        drawTextCentered(ctx, `RATING ${team.rating}`, 0, VIEW_W, VIEW_H - 28, SUBTLE, 1);
       }
     } else {
       drawList(ctx, ts.list, VIEW_W / 2, 78, DEFAULT_STYLE);

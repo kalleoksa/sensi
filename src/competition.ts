@@ -59,7 +59,23 @@ export interface Competition {
   rng: Rng;
 }
 
-const MAX_GOALS = 4; // ceiling for a simulated scoreline
+const MAX_GOALS = 7; // ceiling for a simulated scoreline
+const BASE_GOALS = 1.3; // expected goals per side between equal teams
+const RATING_SCALE = 30; // rating gap that multiplies expected goals by e
+
+// Goals for one side of a simulated fixture: Poisson around an expectation
+// that grows with the rating gap (Spain v Curaçao ~ 3.6 v 0.5).
+function simGoals(rng: Rng, own: TeamDef, opp: TeamDef): number {
+  const lambda = BASE_GOALS * Math.exp((own.rating - opp.rating) / RATING_SCALE);
+  const limit = Math.exp(-lambda);
+  let k = 0;
+  let p = rng.next();
+  while (p > limit && k < MAX_GOALS) {
+    k++;
+    p *= rng.next();
+  }
+  return k;
+}
 
 function shuffle<T>(arr: T[], rng: Rng): T[] {
   const a = [...arr];
@@ -173,7 +189,7 @@ function resolve(f: Fixture, rng: Rng): void {
   f.played = true;
   if (f.sa > f.sb) f.winner = f.a;
   else if (f.sb > f.sa) f.winner = f.b;
-  else f.winner = rng.next() < 0.5 ? f.a : f.b; // penalties
+  else f.winner = rng.next() < 0.5 + (f.a.rating - f.b.rating) / 200 ? f.a : f.b; // penalties, slightly favouring the stronger side
 }
 
 // Record the player's own result. yourGoals/oppGoals come from the live match
@@ -197,8 +213,8 @@ export function recordYourResult(comp: Competition, yourGoals: number, oppGoals:
 export function simRound(comp: Competition): void {
   for (const f of comp.rounds[comp.roundIndex]) {
     if (f.played) continue;
-    f.sa = comp.rng.int(0, MAX_GOALS);
-    f.sb = comp.rng.int(0, MAX_GOALS);
+    f.sa = simGoals(comp.rng, f.a, f.b);
+    f.sb = simGoals(comp.rng, f.b, f.a);
     resolve(f, comp.rng);
   }
 }

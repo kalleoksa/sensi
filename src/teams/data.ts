@@ -29,6 +29,12 @@ export interface TeamDef {
   group?: GroupId; // World Cup 26 group, if qualified
   kit: Kit;
   gkKit?: Kit; // defaults to a contrast-picked stock keeper kit
+  rating: number; // team strength, ~45 (minnow) .. ~92 (favourite)
+}
+
+// Rating as 0..1 across the field's realistic spread (drives match skill).
+export function teamSkill(t: TeamDef): number {
+  return Math.min(1, Math.max(0, (t.rating - 45) / 47));
 }
 
 const rgb = (r: number, g: number, b: number): RGB => [r, g, b];
@@ -96,70 +102,93 @@ export function goalkeeperKits(homeShirt: RGB, awayShirt: RGB): { home: Kit; awa
   };
 }
 
+// Change strip for an away side whose shirt would clash with the home shirt:
+// first the reversed kit (shorts colour on the shirt), else the stock colour
+// furthest from both the home shirt and the grass.
+const KIT_CLASH = 110 * 110; // squared RGB distance below which two shirts read alike
+const CHANGE_COLORS: RGB[] = [WHITE, BLACK, RED, rgb(40, 110, 200), YELLOW, rgb(120, 40, 140)];
+
+export function awayKit(home: Kit, away: Kit): Kit {
+  const clashes = (c: RGB): boolean =>
+    colorDist2(c, home.shirt) < KIT_CLASH || colorDist2(c, PITCH_TONE) < KIT_CLASH;
+  if (!clashes(away.shirt)) return away;
+  if (!clashes(away.shorts)) return { shirt: away.shorts, shorts: away.shirt, socks: away.shorts };
+  let best = CHANGE_COLORS[0];
+  let bestD = -1;
+  for (const c of CHANGE_COLORS) {
+    const d = Math.min(colorDist2(c, home.shirt), colorDist2(c, PITCH_TONE));
+    if (d > bestD) {
+      bestD = d;
+      best = c;
+    }
+  }
+  return { shirt: best, shorts: away.shorts, socks: best };
+}
+
 export const TEAMS: TeamDef[] = [
   // --- Europe (UEFA: 16 at WC26, + Italy/Ireland who didn't qualify) ---
-  { id: 'eng', name: 'ENGLAND', short: 'ENG', continent: 'EUROPE', group: 'L', kit: { shirt: WHITE, shorts: hx('#0A285F'), socks: WHITE } },
-  { id: 'fra', name: 'FRANCE', short: 'FRA', continent: 'EUROPE', group: 'I', kit: { shirt: hx('#1E3A6E'), shorts: WHITE, socks: hx('#1E3A6E') } },
-  { id: 'ger', name: 'GERMANY', short: 'GER', continent: 'EUROPE', group: 'E', kit: { shirt: WHITE, shorts: BLACK, socks: WHITE, pattern: 'band', accent: hx('#DD0000') } },
-  { id: 'esp', name: 'SPAIN', short: 'ESP', continent: 'EUROPE', group: 'H', kit: { shirt: hx('#AA151B'), shorts: hx('#0A285F'), socks: hx('#0A285F'), pattern: 'band', accent: hx('#F1BF00') } },
-  { id: 'ned', name: 'NETHERLANDS', short: 'NED', continent: 'EUROPE', group: 'F', kit: { shirt: hx('#FF6900'), shorts: BLACK, socks: hx('#FF6900') } },
-  { id: 'swe', name: 'SWEDEN', short: 'SWE', continent: 'EUROPE', group: 'F', kit: { shirt: hx('#FECC00'), shorts: hx('#005293'), socks: hx('#FECC00') } },
-  { id: 'cze', name: 'CZECHIA', short: 'CZE', continent: 'EUROPE', group: 'A', kit: { shirt: hx('#D7141A'), shorts: hx('#11457E'), socks: hx('#D7141A') } },
-  { id: 'bih', name: 'BOSNIA', short: 'BIH', continent: 'EUROPE', group: 'B', kit: { shirt: hx('#1B1464'), shorts: hx('#1B1464'), socks: hx('#1B1464'), pattern: 'band', accent: hx('#FFD100') } },
-  { id: 'sui', name: 'SWITZERLAND', short: 'SUI', continent: 'EUROPE', group: 'B', kit: { shirt: hx('#DA291C'), shorts: hx('#DA291C'), socks: hx('#DA291C') } },
-  { id: 'sco', name: 'SCOTLAND', short: 'SCO', continent: 'EUROPE', group: 'C', kit: { shirt: hx('#0A285F'), shorts: hx('#0A285F'), socks: hx('#0A285F') } },
-  { id: 'tur', name: 'TURKEY', short: 'TUR', continent: 'EUROPE', group: 'D', kit: { shirt: hx('#E30A17'), shorts: WHITE, socks: hx('#E30A17') } },
-  { id: 'bel', name: 'BELGIUM', short: 'BEL', continent: 'EUROPE', group: 'G', kit: { shirt: hx('#E30613'), shorts: BLACK, socks: hx('#E30613') } },
-  { id: 'nor', name: 'NORWAY', short: 'NOR', continent: 'EUROPE', group: 'I', kit: { shirt: hx('#BA0C2F'), shorts: hx('#00205B'), socks: hx('#BA0C2F') } },
-  { id: 'aut', name: 'AUSTRIA', short: 'AUT', continent: 'EUROPE', group: 'J', kit: { shirt: hx('#ED2939'), shorts: WHITE, socks: hx('#ED2939') } },
-  { id: 'por', name: 'PORTUGAL', short: 'POR', continent: 'EUROPE', group: 'K', kit: { shirt: hx('#C8102E'), shorts: hx('#006600'), socks: hx('#C8102E') } },
-  { id: 'cro', name: 'CROATIA', short: 'CRO', continent: 'EUROPE', group: 'L', kit: { shirt: WHITE, shorts: hx('#0F3B8C'), socks: WHITE, pattern: 'check', accent: hx('#D2122E') } },
-  { id: 'ita', name: 'ITALY', short: 'ITA', continent: 'EUROPE', kit: { shirt: AZZURRI, shorts: WHITE, socks: AZZURRI } },
-  { id: 'irl', name: 'IRELAND', short: 'IRL', continent: 'EUROPE', kit: { shirt: GREEN, shorts: WHITE, socks: GREEN } },
+  { id: 'eng', name: 'ENGLAND', short: 'ENG', continent: 'EUROPE', group: 'L', rating: 88, kit: { shirt: WHITE, shorts: hx('#0A285F'), socks: WHITE } },
+  { id: 'fra', name: 'FRANCE', short: 'FRA', continent: 'EUROPE', group: 'I', rating: 91, kit: { shirt: hx('#1E3A6E'), shorts: WHITE, socks: hx('#1E3A6E') } },
+  { id: 'ger', name: 'GERMANY', short: 'GER', continent: 'EUROPE', group: 'E', rating: 86, kit: { shirt: WHITE, shorts: BLACK, socks: WHITE, pattern: 'band', accent: hx('#DD0000') } },
+  { id: 'esp', name: 'SPAIN', short: 'ESP', continent: 'EUROPE', group: 'H', rating: 92, kit: { shirt: hx('#AA151B'), shorts: hx('#0A285F'), socks: hx('#0A285F'), pattern: 'band', accent: hx('#F1BF00') } },
+  { id: 'ned', name: 'NETHERLANDS', short: 'NED', continent: 'EUROPE', group: 'F', rating: 85, kit: { shirt: hx('#FF6900'), shorts: BLACK, socks: hx('#FF6900') } },
+  { id: 'swe', name: 'SWEDEN', short: 'SWE', continent: 'EUROPE', group: 'F', rating: 72, kit: { shirt: hx('#FECC00'), shorts: hx('#005293'), socks: hx('#FECC00') } },
+  { id: 'cze', name: 'CZECHIA', short: 'CZE', continent: 'EUROPE', group: 'A', rating: 70, kit: { shirt: hx('#D7141A'), shorts: hx('#11457E'), socks: hx('#D7141A') } },
+  { id: 'bih', name: 'BOSNIA', short: 'BIH', continent: 'EUROPE', group: 'B', rating: 64, kit: { shirt: hx('#1B1464'), shorts: hx('#1B1464'), socks: hx('#1B1464'), pattern: 'band', accent: hx('#FFD100') } },
+  { id: 'sui', name: 'SWITZERLAND', short: 'SUI', continent: 'EUROPE', group: 'B', rating: 76, kit: { shirt: hx('#DA291C'), shorts: hx('#DA291C'), socks: hx('#DA291C') } },
+  { id: 'sco', name: 'SCOTLAND', short: 'SCO', continent: 'EUROPE', group: 'C', rating: 70, kit: { shirt: hx('#0A285F'), shorts: hx('#0A285F'), socks: hx('#0A285F') } },
+  { id: 'tur', name: 'TURKEY', short: 'TUR', continent: 'EUROPE', group: 'D', rating: 75, kit: { shirt: hx('#E30A17'), shorts: WHITE, socks: hx('#E30A17') } },
+  { id: 'bel', name: 'BELGIUM', short: 'BEL', continent: 'EUROPE', group: 'G', rating: 82, kit: { shirt: hx('#E30613'), shorts: BLACK, socks: hx('#E30613') } },
+  { id: 'nor', name: 'NORWAY', short: 'NOR', continent: 'EUROPE', group: 'I', rating: 76, kit: { shirt: hx('#BA0C2F'), shorts: hx('#00205B'), socks: hx('#BA0C2F') } },
+  { id: 'aut', name: 'AUSTRIA', short: 'AUT', continent: 'EUROPE', group: 'J', rating: 76, kit: { shirt: hx('#ED2939'), shorts: WHITE, socks: hx('#ED2939') } },
+  { id: 'por', name: 'PORTUGAL', short: 'POR', continent: 'EUROPE', group: 'K', rating: 88, kit: { shirt: hx('#C8102E'), shorts: hx('#006600'), socks: hx('#C8102E') } },
+  { id: 'cro', name: 'CROATIA', short: 'CRO', continent: 'EUROPE', group: 'L', rating: 81, kit: { shirt: WHITE, shorts: hx('#0F3B8C'), socks: WHITE, pattern: 'check', accent: hx('#D2122E') } },
+  { id: 'ita', name: 'ITALY', short: 'ITA', continent: 'EUROPE', rating: 83, kit: { shirt: AZZURRI, shorts: WHITE, socks: AZZURRI } },
+  { id: 'irl', name: 'IRELAND', short: 'IRL', continent: 'EUROPE', rating: 64, kit: { shirt: GREEN, shorts: WHITE, socks: GREEN } },
 
   // --- South America (CONMEBOL: 6) ---
-  { id: 'bra', name: 'BRAZIL', short: 'BRA', continent: 'S. AMERICA', group: 'C', kit: { shirt: hx('#FFDF00'), shorts: WHITE, socks: WHITE } },
-  { id: 'par', name: 'PARAGUAY', short: 'PAR', continent: 'S. AMERICA', group: 'D', kit: { shirt: hx('#D52B1E'), shorts: hx('#0038A8'), socks: WHITE, pattern: 'stripes', accent: WHITE } },
-  { id: 'ecu', name: 'ECUADOR', short: 'ECU', continent: 'S. AMERICA', group: 'E', kit: { shirt: hx('#FFD100'), shorts: hx('#003893'), socks: hx('#FFD100') } },
-  { id: 'uru', name: 'URUGUAY', short: 'URU', continent: 'S. AMERICA', group: 'H', kit: { shirt: hx('#5CBFEB'), shorts: BLACK, socks: hx('#5CBFEB') } },
-  { id: 'arg', name: 'ARGENTINA', short: 'ARG', continent: 'S. AMERICA', group: 'J', kit: { shirt: hx('#75AADB'), shorts: hx('#0F3B8C'), socks: WHITE, pattern: 'stripes', accent: WHITE } },
-  { id: 'col', name: 'COLOMBIA', short: 'COL', continent: 'S. AMERICA', group: 'K', kit: { shirt: hx('#FCD116'), shorts: hx('#003893'), socks: hx('#FCD116') } },
+  { id: 'bra', name: 'BRAZIL', short: 'BRA', continent: 'S. AMERICA', group: 'C', rating: 89, kit: { shirt: hx('#FFDF00'), shorts: WHITE, socks: WHITE } },
+  { id: 'par', name: 'PARAGUAY', short: 'PAR', continent: 'S. AMERICA', group: 'D', rating: 70, kit: { shirt: hx('#D52B1E'), shorts: hx('#0038A8'), socks: WHITE, pattern: 'stripes', accent: WHITE } },
+  { id: 'ecu', name: 'ECUADOR', short: 'ECU', continent: 'S. AMERICA', group: 'E', rating: 74, kit: { shirt: hx('#FFD100'), shorts: hx('#003893'), socks: hx('#FFD100') } },
+  { id: 'uru', name: 'URUGUAY', short: 'URU', continent: 'S. AMERICA', group: 'H', rating: 80, kit: { shirt: hx('#5CBFEB'), shorts: BLACK, socks: hx('#5CBFEB') } },
+  { id: 'arg', name: 'ARGENTINA', short: 'ARG', continent: 'S. AMERICA', group: 'J', rating: 92, kit: { shirt: hx('#75AADB'), shorts: hx('#0F3B8C'), socks: WHITE, pattern: 'stripes', accent: WHITE } },
+  { id: 'col', name: 'COLOMBIA', short: 'COL', continent: 'S. AMERICA', group: 'K', rating: 79, kit: { shirt: hx('#FCD116'), shorts: hx('#003893'), socks: hx('#FCD116') } },
 
   // --- North America (CONCACAF: 3 hosts + 3 qualifiers) ---
-  { id: 'mex', name: 'MEXICO', short: 'MEX', continent: 'N. AMERICA', group: 'A', kit: { shirt: hx('#006847'), shorts: WHITE, socks: hx('#006847') } },
-  { id: 'can', name: 'CANADA', short: 'CAN', continent: 'N. AMERICA', group: 'B', kit: { shirt: WHITE, shorts: WHITE, socks: WHITE, pattern: 'band', accent: hx('#FF0000') } },
-  { id: 'hai', name: 'HAITI', short: 'HAI', continent: 'N. AMERICA', group: 'C', kit: { shirt: hx('#00209F'), shorts: hx('#00209F'), socks: hx('#00209F') } },
-  { id: 'usa', name: 'USA', short: 'USA', continent: 'N. AMERICA', group: 'D', kit: { shirt: WHITE, shorts: hx('#1F2742'), socks: WHITE } },
-  { id: 'cuw', name: 'CURACAO', short: 'CUW', continent: 'N. AMERICA', group: 'E', kit: { shirt: hx('#002B7F'), shorts: hx('#002B7F'), socks: hx('#002B7F') } },
-  { id: 'pan', name: 'PANAMA', short: 'PAN', continent: 'N. AMERICA', group: 'L', kit: { shirt: hx('#DB0A16'), shorts: hx('#005293'), socks: hx('#DB0A16') } },
+  { id: 'mex', name: 'MEXICO', short: 'MEX', continent: 'N. AMERICA', group: 'A', rating: 75, kit: { shirt: hx('#006847'), shorts: WHITE, socks: hx('#006847') } },
+  { id: 'can', name: 'CANADA', short: 'CAN', continent: 'N. AMERICA', group: 'B', rating: 68, kit: { shirt: WHITE, shorts: WHITE, socks: WHITE, pattern: 'band', accent: hx('#FF0000') } },
+  { id: 'hai', name: 'HAITI', short: 'HAI', continent: 'N. AMERICA', group: 'C', rating: 50, kit: { shirt: hx('#00209F'), shorts: hx('#00209F'), socks: hx('#00209F') } },
+  { id: 'usa', name: 'USA', short: 'USA', continent: 'N. AMERICA', group: 'D', rating: 75, kit: { shirt: WHITE, shorts: hx('#1F2742'), socks: WHITE } },
+  { id: 'cuw', name: 'CURACAO', short: 'CUW', continent: 'N. AMERICA', group: 'E', rating: 48, kit: { shirt: hx('#002B7F'), shorts: hx('#002B7F'), socks: hx('#002B7F') } },
+  { id: 'pan', name: 'PANAMA', short: 'PAN', continent: 'N. AMERICA', group: 'L', rating: 60, kit: { shirt: hx('#DB0A16'), shorts: hx('#005293'), socks: hx('#DB0A16') } },
 
   // --- Africa (CAF: 10 at WC26, + Cameroon/Nigeria who didn't qualify) ---
-  { id: 'rsa', name: 'SOUTH AFRICA', short: 'RSA', continent: 'AFRICA', group: 'A', kit: { shirt: hx('#007749'), shorts: WHITE, socks: hx('#007749') } },
-  { id: 'mar', name: 'MOROCCO', short: 'MAR', continent: 'AFRICA', group: 'C', kit: { shirt: hx('#C1272D'), shorts: hx('#006233'), socks: hx('#C1272D') } },
-  { id: 'civ', name: 'IVORY COAST', short: 'CIV', continent: 'AFRICA', group: 'E', kit: { shirt: hx('#FF8200'), shorts: hx('#FF8200'), socks: hx('#FF8200') } },
-  { id: 'tun', name: 'TUNISIA', short: 'TUN', continent: 'AFRICA', group: 'F', kit: { shirt: hx('#E70013'), shorts: WHITE, socks: hx('#E70013') } },
-  { id: 'egy', name: 'EGYPT', short: 'EGY', continent: 'AFRICA', group: 'G', kit: { shirt: hx('#CE1126'), shorts: WHITE, socks: hx('#CE1126') } },
-  { id: 'cpv', name: 'CAPE VERDE', short: 'CPV', continent: 'AFRICA', group: 'H', kit: { shirt: hx('#003893'), shorts: WHITE, socks: hx('#003893') } },
-  { id: 'sen', name: 'SENEGAL', short: 'SEN', continent: 'AFRICA', group: 'I', kit: { shirt: WHITE, shorts: WHITE, socks: WHITE } },
-  { id: 'alg', name: 'ALGERIA', short: 'ALG', continent: 'AFRICA', group: 'J', kit: { shirt: WHITE, shorts: hx('#007229'), socks: WHITE, pattern: 'band', accent: hx('#007229') } },
-  { id: 'cod', name: 'DR CONGO', short: 'COD', continent: 'AFRICA', group: 'K', kit: { shirt: hx('#007FFF'), shorts: hx('#007FFF'), socks: hx('#007FFF') } },
-  { id: 'gha', name: 'GHANA', short: 'GHA', continent: 'AFRICA', group: 'L', kit: { shirt: WHITE, shorts: hx('#006B3F'), socks: hx('#FCD116'), pattern: 'band', accent: hx('#CE1126') } },
-  { id: 'cmr', name: 'CAMEROON', short: 'CMR', continent: 'AFRICA', kit: { shirt: GREEN, shorts: RED, socks: YELLOW } },
-  { id: 'nga', name: 'NIGERIA', short: 'NGA', continent: 'AFRICA', kit: { shirt: GREEN, shorts: WHITE, socks: GREEN } },
+  { id: 'rsa', name: 'SOUTH AFRICA', short: 'RSA', continent: 'AFRICA', group: 'A', rating: 60, kit: { shirt: hx('#007749'), shorts: WHITE, socks: hx('#007749') } },
+  { id: 'mar', name: 'MOROCCO', short: 'MAR', continent: 'AFRICA', group: 'C', rating: 81, kit: { shirt: hx('#C1272D'), shorts: hx('#006233'), socks: hx('#C1272D') } },
+  { id: 'civ', name: 'IVORY COAST', short: 'CIV', continent: 'AFRICA', group: 'E', rating: 70, kit: { shirt: hx('#FF8200'), shorts: hx('#FF8200'), socks: hx('#FF8200') } },
+  { id: 'tun', name: 'TUNISIA', short: 'TUN', continent: 'AFRICA', group: 'F', rating: 64, kit: { shirt: hx('#E70013'), shorts: WHITE, socks: hx('#E70013') } },
+  { id: 'egy', name: 'EGYPT', short: 'EGY', continent: 'AFRICA', group: 'G', rating: 66, kit: { shirt: hx('#CE1126'), shorts: WHITE, socks: hx('#CE1126') } },
+  { id: 'cpv', name: 'CAPE VERDE', short: 'CPV', continent: 'AFRICA', group: 'H', rating: 55, kit: { shirt: hx('#003893'), shorts: WHITE, socks: hx('#003893') } },
+  { id: 'sen', name: 'SENEGAL', short: 'SEN', continent: 'AFRICA', group: 'I', rating: 74, kit: { shirt: WHITE, shorts: WHITE, socks: WHITE } },
+  { id: 'alg', name: 'ALGERIA', short: 'ALG', continent: 'AFRICA', group: 'J', rating: 68, kit: { shirt: WHITE, shorts: hx('#007229'), socks: WHITE, pattern: 'band', accent: hx('#007229') } },
+  { id: 'cod', name: 'DR CONGO', short: 'COD', continent: 'AFRICA', group: 'K', rating: 62, kit: { shirt: hx('#007FFF'), shorts: hx('#007FFF'), socks: hx('#007FFF') } },
+  { id: 'gha', name: 'GHANA', short: 'GHA', continent: 'AFRICA', group: 'L', rating: 62, kit: { shirt: WHITE, shorts: hx('#006B3F'), socks: hx('#FCD116'), pattern: 'band', accent: hx('#CE1126') } },
+  { id: 'cmr', name: 'CAMEROON', short: 'CMR', continent: 'AFRICA', rating: 65, kit: { shirt: GREEN, shorts: RED, socks: YELLOW } },
+  { id: 'nga', name: 'NIGERIA', short: 'NGA', continent: 'AFRICA', rating: 68, kit: { shirt: GREEN, shorts: WHITE, socks: GREEN } },
 
   // --- Asia (AFC: 8) ---
-  { id: 'kor', name: 'S. KOREA', short: 'KOR', continent: 'ASIA', group: 'A', kit: { shirt: hx('#E4002B'), shorts: BLACK, socks: hx('#E4002B') } },
-  { id: 'qat', name: 'QATAR', short: 'QAT', continent: 'ASIA', group: 'B', kit: { shirt: WHITE, shorts: WHITE, socks: WHITE, pattern: 'band', accent: hx('#8A1538') } },
-  { id: 'jpn', name: 'JAPAN', short: 'JPN', continent: 'ASIA', group: 'F', kit: { shirt: hx('#0A1F6B'), shorts: hx('#0A1F6B'), socks: hx('#0A1F6B') } },
-  { id: 'irn', name: 'IRAN', short: 'IRN', continent: 'ASIA', group: 'G', kit: { shirt: WHITE, shorts: WHITE, socks: WHITE } },
-  { id: 'ksa', name: 'SAUDI ARABIA', short: 'KSA', continent: 'ASIA', group: 'H', kit: { shirt: WHITE, shorts: WHITE, socks: WHITE } },
-  { id: 'irq', name: 'IRAQ', short: 'IRQ', continent: 'ASIA', group: 'I', kit: { shirt: hx('#009639'), shorts: WHITE, socks: hx('#009639') } },
-  { id: 'jor', name: 'JORDAN', short: 'JOR', continent: 'ASIA', group: 'J', kit: { shirt: WHITE, shorts: BLACK, socks: WHITE } },
-  { id: 'uzb', name: 'UZBEKISTAN', short: 'UZB', continent: 'ASIA', group: 'K', kit: { shirt: WHITE, shorts: WHITE, socks: WHITE } },
+  { id: 'kor', name: 'S. KOREA', short: 'KOR', continent: 'ASIA', group: 'A', rating: 72, kit: { shirt: hx('#E4002B'), shorts: BLACK, socks: hx('#E4002B') } },
+  { id: 'qat', name: 'QATAR', short: 'QAT', continent: 'ASIA', group: 'B', rating: 58, kit: { shirt: WHITE, shorts: WHITE, socks: WHITE, pattern: 'band', accent: hx('#8A1538') } },
+  { id: 'jpn', name: 'JAPAN', short: 'JPN', continent: 'ASIA', group: 'F', rating: 78, kit: { shirt: hx('#0A1F6B'), shorts: hx('#0A1F6B'), socks: hx('#0A1F6B') } },
+  { id: 'irn', name: 'IRAN', short: 'IRN', continent: 'ASIA', group: 'G', rating: 68, kit: { shirt: WHITE, shorts: WHITE, socks: WHITE } },
+  { id: 'ksa', name: 'SAUDI ARABIA', short: 'KSA', continent: 'ASIA', group: 'H', rating: 60, kit: { shirt: WHITE, shorts: WHITE, socks: WHITE } },
+  { id: 'irq', name: 'IRAQ', short: 'IRQ', continent: 'ASIA', group: 'I', rating: 57, kit: { shirt: hx('#009639'), shorts: WHITE, socks: hx('#009639') } },
+  { id: 'jor', name: 'JORDAN', short: 'JOR', continent: 'ASIA', group: 'J', rating: 56, kit: { shirt: WHITE, shorts: BLACK, socks: WHITE } },
+  { id: 'uzb', name: 'UZBEKISTAN', short: 'UZB', continent: 'ASIA', group: 'K', rating: 60, kit: { shirt: WHITE, shorts: WHITE, socks: WHITE } },
 
   // --- Oceania (Australia AFC / New Zealand OFC, grouped here geographically) ---
-  { id: 'aus', name: 'AUSTRALIA', short: 'AUS', continent: 'OCEANIA', group: 'D', kit: { shirt: hx('#FFB81C'), shorts: hx('#00843D'), socks: hx('#FFB81C') } },
-  { id: 'nzl', name: 'NEW ZEALAND', short: 'NZL', continent: 'OCEANIA', group: 'G', kit: { shirt: WHITE, shorts: BLACK, socks: WHITE } },
+  { id: 'aus', name: 'AUSTRALIA', short: 'AUS', continent: 'OCEANIA', group: 'D', rating: 67, kit: { shirt: hx('#FFB81C'), shorts: hx('#00843D'), socks: hx('#FFB81C') } },
+  { id: 'nzl', name: 'NEW ZEALAND', short: 'NZL', continent: 'OCEANIA', group: 'G', rating: 52, kit: { shirt: WHITE, shorts: BLACK, socks: WHITE } },
 ];
 
 // Continents that actually have teams, in display order.

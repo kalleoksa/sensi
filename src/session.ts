@@ -27,6 +27,7 @@ export interface MatchConfig {
   awayFormation: FormationId;
   halfLength: number; // seconds per half
   pitch: Pitch;
+  seed?: number; // match PRNG seed; fixed default keeps tests reproducible
 }
 
 export interface Session {
@@ -43,11 +44,11 @@ function pickControlled(s: GameState, team: 0 | 1, current: Player | null): Play
   if (s.carrier && s.carrier.team === team && s.carrier.role !== 'gk') return s.carrier;
   let best: Player | null = current;
   let bestD =
-    current && current.team === team && current.role !== 'gk'
+    current && current.team === team && current.role !== 'gk' && !current.sentOff
       ? Math.hypot(current.x - b.x, current.y - b.y) * 0.8 // stickiness factor
       : Infinity;
   for (const p of s.players) {
-    if (p.team !== team || p.role === 'gk') continue;
+    if (p.team !== team || p.role === 'gk' || p.sentOff) continue;
     const d = Math.hypot(p.x - b.x, p.y - b.y);
     if (d < bestD) {
       bestD = d;
@@ -58,7 +59,7 @@ function pickControlled(s: GameState, team: 0 | 1, current: Player | null): Play
 }
 
 export function makeSession(config: MatchConfig): Session {
-  const rng = makeRng(7);
+  const rng = makeRng(config.seed ?? 7);
   const midY = (FIELD_T + FIELD_B) / 2;
   const state: GameState = {
     ball: makeBall(CX, midY),
@@ -70,6 +71,7 @@ export function makeSession(config: MatchConfig): Session {
     foul: null,
     teamSlideCd: [0, 0],
     referee: makeReferee(),
+    rng,
   };
   setPitch(config.pitch.friction, config.pitch.bounce);
   const match = makeMatch();
