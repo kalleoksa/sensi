@@ -60,6 +60,7 @@ export function makeReferee(): Referee {
     charge: 0,
     bufferedTap: 0,
     pokeTimer: 0,
+    beatenTimer: 0,
     slideCooldown: 0,
     yellow: false,
     sentOff: false,

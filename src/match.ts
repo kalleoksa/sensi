@@ -231,6 +231,7 @@ function resetPlayerForMatch(p: Player): void {
   p.charge = 0;
   p.bufferedTap = 0;
   p.pokeTimer = 0;
+  p.beatenTimer = 0;
   p.slideCooldown = 0;
   p.yellow = false;
   p.sentOff = false; // back on the pitch for the new match

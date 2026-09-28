@@ -89,6 +89,7 @@ export interface Player {
   charge: number; // seconds the action has been held
   bufferedTap: number; // seconds left on a tap buffered during a lock
   pokeTimer: number; // seconds left on an extended-reach standing-tackle poke
+  beatenTimer: number; // seconds after losing the ball to a tackle: can't tackle back yet
   slideCooldown: number; // AI: seconds until this player may attempt another slide
   yellow: boolean; // has been booked once
   sentOff: boolean; // red-carded / second yellow — removed from play

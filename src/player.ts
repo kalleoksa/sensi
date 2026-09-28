@@ -28,6 +28,8 @@ const CONTROL_R = 13; // within this, a player is "near" the ball
 const DRIBBLE_LEAD = 6; // ball is kept this far ahead of the carrier's feet
 const DRIBBLE_SPRING = 11; // how hard the ball is held to the lead point
 const TACKLE_R = 8; // an opponent this close to the carrier pokes the ball loose
+const BEATEN_LOCK = 0.35; // a dispossessed carrier can't tackle straight back for this long
+const BEHIND_STEAL = 0.1; // per-step chance contact from behind nicks the ball
 const SLIDE_BALL_R = 26; // a sliding lunge (legs out) within this of the ball wins it
 const SLIDE_HIT_R = 8; // a slide within this of an opponent makes contact
 // A keeper uses his hands in his own box: he can claim a ball up to just over
@@ -115,6 +117,7 @@ export function makePlayer(init: PlayerInit): Player {
     charge: 0,
     bufferedTap: 0,
     pokeTimer: 0,
+    beatenTimer: 0,
     slideCooldown: 0,
     yellow: false,
     sentOff: false,
@@ -285,7 +288,7 @@ export function resolvePossession(state: GameState, dt: number): void {
       const saving = inField && b.owner !== p && keeperHands(p);
       if (b.controlLock > 0 && !saving) continue;
       if (p.role === 'gk' && b.keeperBeaten) continue;
-      const reachZ = keeperHands(p) ? GK_REACH_Z + p.z : 4;
+      const reachZ = keeperHands(p) ? GK_REACH_Z + p.z : HEAD_Z_MIN; // feet/chest below header height
       if (b.z >= reachZ) continue;
       const d = Math.hypot(p.x - b.x, p.y - b.y);
       if (d < bestD) {
@@ -293,6 +296,22 @@ export function resolvePossession(state: GameState, dt: number): void {
         best = p;
       }
     }
+  }
+  // Possession is sticky: the carrier keeps the ball while it is still at his
+  // feet, even if someone else is marginally nearer. Only a tackle (below)
+  // takes it off him, so two contesting players don't swap it every step.
+  const prev = state.carrier;
+  if (
+    best &&
+    prev &&
+    prev !== best &&
+    b.controlLock <= 0 &&
+    prev.state !== 'fallen' &&
+    !prev.sentOff &&
+    b.z < HEAD_Z_MIN &&
+    Math.hypot(prev.x - b.x, prev.y - b.y) < CONTROL_R
+  ) {
+    best = prev;
   }
   if (best && best.role === 'gk' && !keeperHolds(state, best)) {
     state.carrier = null;
@@ -311,8 +330,14 @@ export function resolvePossession(state: GameState, dt: number): void {
     if (o.team === best.team || o.state === 'fallen' || o.sentOff) continue;
     const d = Math.hypot(o.x - best.x, o.y - best.y);
     if (d < pressDist) pressDist = d;
-    const reach = o.pokeTimer > 0 ? POKE_REACH : TACKLE_R;
-    if (d < reach) {
+    if (o.beatenTimer > 0) continue; // just lost it: no instant tackle back
+    // Contact wins it outright from the front or side; from behind (relative to
+    // the way the carrier faces) it only sometimes nicks it. A deliberate poke reaches in from anywhere.
+    const poking = o.pokeTimer > 0;
+    const [cfx, cfy] = DIR_VEC[best.dir];
+    const fromBehind = (o.x - best.x) * cfx + (o.y - best.y) * cfy < -0.4 * d;
+    const contact = d < TACKLE_R && (!fromBehind || state.rng.next() < BEHIND_STEAL);
+    if (poking ? d < POKE_REACH : contact) {
       const [ox, oy] = DIR_VEC[o.dir];
       b.vx = ox * 112;
       b.vy = oy * 112;
@@ -320,6 +345,7 @@ export function resolvePossession(state: GameState, dt: number): void {
       emitSfx('tackle', 0.6);
       b.owner = o;
       b.lastKick = null; // a poked-loose ball is a deflection, not a pass
+      best.beatenTimer = BEATEN_LOCK;
       state.carrier = null;
       return;
     }
@@ -348,7 +374,7 @@ function keeperHolds(state: GameState, gk: Player): boolean {
   const speed = Math.hypot(b.vx, b.vy);
   if (speed < SAVE_SPEED || !b.owner || b.owner.team === gk.team) return true;
   const pace = clamp((speed - SAVE_SPEED) / (SHOT_MAX - SAVE_SPEED), 0, 1);
-  const hold = clamp(0.85 - 0.45 * pace - (b.z > 8 ? 0.15 : 0), 0.2, 0.85);
+  const hold = clamp(0.92 - 0.35 * pace - (b.z > 8 ? 0.15 : 0), 0.35, 0.92);
   const r = state.rng.next();
   if (r < hold) return true;
   if (r < hold + (1 - hold) * 0.55) {
@@ -480,6 +506,7 @@ export function controlHuman(state: GameState, p: Player, input: InputFrame, dt:
   if (p.stateTimer > 0) p.stateTimer = Math.max(0, p.stateTimer - dt);
   if (p.bufferedTap > 0) p.bufferedTap = Math.max(0, p.bufferedTap - dt);
   if (p.pokeTimer > 0) p.pokeTimer = Math.max(0, p.pokeTimer - dt);
+  if (p.beatenTimer > 0) p.beatenTimer = Math.max(0, p.beatenTimer - dt);
 
   const locked = isLocked(p);
   const isCarrier = state.carrier === p;

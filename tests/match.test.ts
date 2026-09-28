@@ -16,7 +16,7 @@ import { TEAMS, awayKit } from '../src/teams/data';
 import { DEFAULT_FORMATION, FORMATION_IDS } from '../src/formations';
 import { PITCHES } from '../src/options';
 import { CX, FIELD_B, FIELD_T, GOAL_HEIGHT } from '../src/world';
-import type { Player } from '../src/state';
+import { Dir, type Player } from '../src/state';
 
 const DT = 1 / 60;
 
@@ -187,6 +187,56 @@ describe('fouls and restarts', () => {
     s.state.foul = { team: 0, x: CX, y: FIELD_T + 150, offender: off, deniedAttack: true };
     stepSession(s, DT);
     expect(off.yellow).toBe(true);
+  });
+});
+
+describe('possession', () => {
+  // Carrier at the centre spot facing up (toward the top goal), ball at his feet.
+  function carrierSetup(): { s: Session; c: Player } {
+    const s = session();
+    livePlay(s);
+    const c = outfielder(s, 0);
+    c.x = CX;
+    c.y = 300;
+    c.dir = Dir.U;
+    const b = s.state.ball;
+    b.x = c.x;
+    b.y = c.y - 6;
+    b.z = 0;
+    b.vx = b.vy = 0;
+    b.controlLock = 0;
+    s.state.carrier = c;
+    return { s, c };
+  }
+
+  it('front contact wins the ball; a nearer rival alone does not', () => {
+    const { s, c } = carrierSetup();
+    const o = outfielder(s, 1);
+    // A rival nearer the ball but not yet in contact: the carrier keeps it.
+    o.x = c.x + 9;
+    o.y = c.y - 9;
+    resolvePossession(s.state, DT);
+    expect(s.state.carrier).toBe(c);
+    // Stepping in front of him (contact) knocks it loose.
+    o.x = c.x;
+    o.y = c.y - 6;
+    resolvePossession(s.state, DT);
+    expect(s.state.carrier).toBeNull();
+    expect(c.beatenTimer).toBeGreaterThan(0);
+  });
+
+  it('contact from behind rarely wins it', () => {
+    let kept = 0;
+    for (let seed = 1; seed <= 20; seed++) {
+      const { s, c } = carrierSetup();
+      s.state.rng.setState(seed);
+      const o = outfielder(s, 1);
+      o.x = c.x;
+      o.y = c.y + 6; // right behind him
+      resolvePossession(s.state, DT);
+      if (s.state.carrier === c) kept++;
+    }
+    expect(kept).toBeGreaterThanOrEqual(15);
   });
 });
 

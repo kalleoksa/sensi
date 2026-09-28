@@ -19,7 +19,7 @@ import { GROUND_FRICTION } from './ball';
 import { FIELD_T, FIELD_B, FIELD_L, FIELD_R, PLAY_W, CX, GOAL_W, GOAL_HEIGHT } from './world';
 
 const AI_SPEED = PLAYER_SPEED * 0.94; // a touch slower than the human
-const SHOOT_RANGE = 175;
+const SHOOT_RANGE = 150;
 const FORWARD_PROGRESS_MIN = 25; // a safe forward pass gaining this much is worth taking
 const RELEASE_DIST = 16; // defender this close => about to tackle, release the ball now
 const BAIL_MAX_BACK = 25; // a release pass may not go more than this far backwards
@@ -32,7 +32,7 @@ const PASS_EVAL_SPEED = 215;
 const SHOT_EVAL_SPEED = 360;
 const MIN_PASS_DIST = 24; // shorter than this isn't worth a pass
 const PASS_LEAD_TIME = 0.35; // seconds of the receiver's run to lead a pass into
-const INTERCEPT_PAD = 8; // player+ball radii: opponent this close to the lane intercepts
+const INTERCEPT_PAD = 13; // = CONTROL_R: an opponent this close to the lane takes the ball
 
 // SupportSpotCalculator (Buckland "Simple Soccer"): a grid of candidate spots,
 // each scored on how OPEN it is (distance to the nearest defender — this is what
