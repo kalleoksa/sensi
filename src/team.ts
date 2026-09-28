@@ -13,7 +13,7 @@ import {
   PLAY_H,
 } from './world';
 import { HAIR_DARK, HAIR_BLOND, HAIR_GINGER, type RGB } from './sprites/palette';
-import { type TeamDef, type Kit, goalkeeperKits, awayKit } from './teams/data';
+import { type TeamDef, type Kit, goalkeeperKits, awayKit, teamSkill } from './teams/data';
 import { FORMATIONS, type FormationId, type Slot } from './formations';
 
 const HAIRS: RGB[] = [HAIR_DARK, HAIR_DARK, HAIR_BLOND, HAIR_GINGER];
@@ -32,7 +32,7 @@ export function homeForSlot(
   return { x, y };
 }
 
-function makeTeam(team: 0 | 1, outfieldKit: Kit, slots: Slot[], rng: Rng, gkKit: Kit): Player[] {
+function makeTeam(team: 0 | 1, outfieldKit: Kit, slots: Slot[], rng: Rng, gkKit: Kit, skill: number): Player[] {
   return slots.map((slot) => {
     const kit = slot.role === 'gk' ? gkKit : outfieldKit;
     // Half-1 placement: team 0 attacks the top, team 1 the bottom.
@@ -51,6 +51,7 @@ function makeTeam(team: 0 | 1, outfieldKit: Kit, slots: Slot[], rng: Rng, gkKit:
       hair: slot.role === 'gk' ? HAIR_DARK : rng.pick(HAIRS),
     };
     const p = makePlayer(init);
+    p.skill = skill;
     p.slotX = slot.x;
     p.slotY = slot.y;
     p.attacksTop = team === 0;
@@ -73,7 +74,7 @@ export function makeTeams(
   const away2 = awayKit(home.kit, away.kit); // change strip on a colour clash
   const gk = goalkeeperKits(home.kit.shirt, away2.shirt);
   return [
-    ...makeTeam(0, home.kit, FORMATIONS[homeFormation], rng, home.gkKit ?? gk.home),
-    ...makeTeam(1, away2, FORMATIONS[awayFormation], rng, away.gkKit ?? gk.away),
+    ...makeTeam(0, home.kit, FORMATIONS[homeFormation], rng, home.gkKit ?? gk.home, teamSkill(home)),
+    ...makeTeam(1, away2, FORMATIONS[awayFormation], rng, away.gkKit ?? gk.away, teamSkill(away)),
   ];
 }

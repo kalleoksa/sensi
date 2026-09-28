@@ -18,6 +18,7 @@ import { type RGB } from './sprites/palette';
 import { WORLD_W, WORLD_H, FIELD_T, FIELD_B, FIELD_L, FIELD_R, CX, GOAL_HEIGHT, PEN_BOX_W, PEN_BOX_D } from './world';
 
 export const PLAYER_SPEED = 72; // px/s; ~10s goal-to-goal over the 720px pitch
+
 const SLIDE_SPEED = 126; // 1.75x run speed, trimmed with PLAYER_SPEED
 const KICK_LOCK = 0.15;
 const SLIDE_LOCK = 0.4;
@@ -118,6 +119,7 @@ export function makePlayer(init: PlayerInit): Player {
     bufferedTap: 0,
     pokeTimer: 0,
     beatenTimer: 0,
+    skill: 0.5,
     slideCooldown: 0,
     yellow: false,
     sentOff: false,
@@ -336,7 +338,11 @@ export function resolvePossession(state: GameState, dt: number): void {
     const poking = o.pokeTimer > 0;
     const [cfx, cfy] = DIR_VEC[best.dir];
     const fromBehind = (o.x - best.x) * cfx + (o.y - best.y) * cfy < -0.4 * d;
-    const contact = d < TACKLE_R && (!fromBehind || state.rng.next() < BEHIND_STEAL);
+    // Skill decides the duel: a better defender wins contact more often, a
+    // better dribbler rides it more often.
+    const edge = o.skill - best.skill; // -1..1
+    const odds = fromBehind ? BEHIND_STEAL * (1 + edge) : clamp(0.5 + 0.6 * edge, 0.15, 0.9);
+    const contact = d < TACKLE_R && state.rng.next() < odds;
     if (poking ? d < POKE_REACH : contact) {
       const [ox, oy] = DIR_VEC[o.dir];
       b.vx = ox * 112;
@@ -373,8 +379,8 @@ function keeperHolds(state: GameState, gk: Player): boolean {
   const b = state.ball;
   const speed = Math.hypot(b.vx, b.vy);
   if (speed < SAVE_SPEED || !b.owner || b.owner.team === gk.team) return true;
-  const pace = clamp((speed - SAVE_SPEED) / (SHOT_MAX - SAVE_SPEED), 0, 1);
-  const hold = clamp(0.92 - 0.35 * pace - (b.z > 8 ? 0.15 : 0), 0.35, 0.92);
+  const shotPace = clamp((speed - SAVE_SPEED) / (SHOT_MAX - SAVE_SPEED), 0, 1);
+  const hold = clamp(0.74 + 0.3 * gk.skill - 0.35 * shotPace - (b.z > 8 ? 0.15 : 0), 0.3, 0.95);
   const r = state.rng.next();
   if (r < hold) return true;
   if (r < hold + (1 - hold) * 0.55) {

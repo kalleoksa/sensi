@@ -217,12 +217,31 @@ describe('possession', () => {
     o.y = c.y - 9;
     resolvePossession(s.state, DT);
     expect(s.state.carrier).toBe(c);
-    // Stepping in front of him (contact) knocks it loose.
+    // Standing in front of him (contact) knocks it loose within a few steps.
     o.x = c.x;
     o.y = c.y - 6;
-    resolvePossession(s.state, DT);
-    expect(s.state.carrier).toBeNull();
+    for (let i = 0; i < 10 && s.state.carrier === c; i++) resolvePossession(s.state, DT);
+    expect(s.state.carrier).not.toBe(c);
     expect(c.beatenTimer).toBeGreaterThan(0);
+  });
+
+  it('the more skilful side wins more front-on duels', () => {
+    const wins = (defSkill: number, carSkill: number): number => {
+      let n = 0;
+      for (let seed = 1; seed <= 200; seed++) {
+        const { s, c } = carrierSetup();
+        s.state.rng.setState(seed);
+        const o = outfielder(s, 1);
+        o.skill = defSkill;
+        c.skill = carSkill;
+        o.x = c.x;
+        o.y = c.y - 6;
+        resolvePossession(s.state, DT);
+        if (s.state.carrier !== c) n++;
+      }
+      return n;
+    };
+    expect(wins(0.9, 0.1)).toBeGreaterThan(wins(0.1, 0.9) + 60);
   });
 
   it('contact from behind rarely wins it', () => {

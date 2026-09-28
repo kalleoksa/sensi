@@ -666,7 +666,10 @@ function openShotX(state: GameState, p: Player, goalY: number): number | null {
     [spots[i], spots[j]] = [spots[j], spots[i]];
   }
   for (const x of spots) {
-    if (passSafe(state, p.x, p.y, x, goalY, p.team, SHOT_EVAL_SPEED, true)) return x;
+    if (!passSafe(state, p.x, p.y, x, goalY, p.team, SHOT_EVAL_SPEED, true)) continue;
+    // A weaker side snatches more shots wide of the post.
+    if (state.rng.next() < 0.5 * (1 - p.skill)) return x + Math.sign(x - CX || 1) * GOAL_W * 0.4;
+    return x;
   }
   return null;
 }
